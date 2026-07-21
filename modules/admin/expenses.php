@@ -7,6 +7,7 @@ requireRole('director', 'accountant', 'manager');
 
 $pdo = getDBConnection();
 $user = currentUser();
+$assetsModuleUrl = '/erp/modules/admin/assets.php';
 $canApprove = hasRole('director');
 $canManageCategories = hasRole('director', 'accountant');
 $canViewHistory = hasRole('director', 'accountant', 'manager');
@@ -490,7 +491,7 @@ if ($expenseIds) {
     $placeholders = implode(',', array_fill(0, count($expenseIds), '?'));
     $linkedAssets = fetchAllSafe(
         $pdo,
-        "SELECT expense_id, asset_code, asset_name, quantity, unit
+        "SELECT id, expense_id, asset_code, asset_name, quantity, unit
          FROM company_assets
          WHERE expense_id IN ($placeholders)
          ORDER BY id DESC",
@@ -851,7 +852,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                     default => 'Nháp',
                                 };
                                 ?>
-                                <tr>
+                                <tr id="expense-<?= (int)$expense['id'] ?>">
                                     <td class="fw-semibold text-primary"><?= e($expense['request_no']) ?></td>
                                     <td><?= e(formatDate($expense['expense_date'])) ?></td>
                                     <td><?= e($expense['category_name']) ?></td>
@@ -866,9 +867,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                         <?php endif; ?>
                                         <?php if (!empty($linkedAssetsByExpense[(int)$expense['id']])): ?>
                                             <div class="small text-success mt-1">
-                                                🏷️ Tài sản:
+                                                <i class="fas fa-tag me-1"></i>Tài sản:
                                                 <?php foreach ($linkedAssetsByExpense[(int)$expense['id']] as $linkedAsset): ?>
-                                                    <a href="/erp/modules/admin/assets.php" class="text-success me-2">
+                                                    <a href="<?= e($assetsModuleUrl . '?action=edit&id=' . (int)$linkedAsset['id'] . '&show_form=1') ?>#asset-form-card" class="text-success me-2">
                                                         <?= e($linkedAsset['asset_code']) ?> <?= e($linkedAsset['asset_name']) ?>
                                                         (<?= (int)($linkedAsset['quantity'] ?? 1) ?> <?= e($linkedAsset['unit'] ?: '') ?>)
                                                     </a>

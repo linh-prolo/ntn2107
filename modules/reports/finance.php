@@ -394,9 +394,10 @@ function loadAll() {
       document.getElementById('kpiHeadcountVal').textContent    = (k.payroll_headcount ?? 0) + ' NV';
 
       if (document.getElementById('kpiAdminBaseVal')) {
+        const deprPerMonth = String(k.expense_depr_per_month ?? '').trim() || fmt(0);
         document.getElementById('kpiAdminBaseVal').textContent = fmt(k.expense_admin_base);
         document.getElementById('kpiDeprVal').textContent = k.expense_depr_fmt || fmt(k.expense_depr);
-        document.getElementById('kpiDeprDetail').textContent = 'Bình quân tháng: ' + (k.expense_depr_per_month || fmt(0));
+        document.getElementById('kpiDeprDetail').textContent = 'Bình quân tháng: ' + deprPerMonth;
         document.getElementById('kpiVehicleVal').textContent = fmt(k.expense_vehicle);
         document.getElementById('kpiVehicleDetail').textContent =
           'Dầu: ' + fmt(k.expense_fuel) + ' | Bảo dưỡng: ' + fmt(k.expense_maintenance) + ' | Cầu đường: ' + fmt(k.expense_toll);

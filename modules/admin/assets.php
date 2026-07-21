@@ -9,6 +9,16 @@ $pdo = getDBConnection();
 $errors = [];
 $oldInputWasFlashed = false;
 $statsWhere = ['1=1'];
+$expensesModuleUrl = '/erp/modules/admin/expenses.php';
+// 1050: table exists, 1060: duplicate column, 1061: duplicate key, 1062: duplicate entry, 1826: duplicate FK name.
+$schemaBootstrapIgnoreCodes = [1050, 1060, 1061, 1062, 1826];
+$schemaBootstrapIgnoreMessages = [
+    'already exists',
+    'duplicate column name',
+    'duplicate key name',
+    'duplicate foreign key constraint name',
+    'errno: 121',
+];
 
 foreach ([
     "CREATE TABLE IF NOT EXISTS asset_units (
@@ -16,14 +26,32 @@ foreach ([
         unit_name VARCHAR(50) NOT NULL UNIQUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-    "ALTER TABLE company_assets ADD COLUMN quantity INT NOT NULL DEFAULT 1 AFTER purchase_price",
-    "ALTER TABLE company_assets ADD COLUMN unit VARCHAR(50) NULL AFTER quantity",
-    "ALTER TABLE company_assets ADD COLUMN expense_id INT NULL AFTER unit",
+    "ALTER TABLE company_assets ADD COLUMN quantity INT NOT NULL DEFAULT 1",
+    "ALTER TABLE company_assets ADD COLUMN unit VARCHAR(50) NULL",
+    "ALTER TABLE company_assets ADD COLUMN expense_id INT NULL",
     "ALTER TABLE company_assets ADD INDEX idx_company_assets_expense_id (expense_id)",
     "ALTER TABLE company_assets ADD CONSTRAINT fk_assets_expense FOREIGN KEY (expense_id) REFERENCES expense_requests(id) ON DELETE SET NULL",
     "INSERT IGNORE INTO asset_units (unit_name) VALUES ('Cái'),('Bộ'),('Chiếc'),('Cụm'),('Hệ thống'),('Máy'),('Bàn'),('Ghế'),('Xe')",
-] as $_sql) {
-    try { $pdo->exec($_sql); } catch (Throwable $_e) { /* column/table already exists */ }
+] as $_sqlIndex => $_sql) {
+    try {
+        $pdo->exec($_sql);
+    } catch (Throwable $_e) {
+        $exceptionMessage = $_e->getMessage();
+        $mysqlErrorCode = $_e instanceof \PDOException ? (int)($_e->errorInfo[1] ?? 0) : 0;
+        $normalizedMessage = mb_strtolower($exceptionMessage, 'UTF-8');
+        $shouldIgnore = in_array($mysqlErrorCode, $schemaBootstrapIgnoreCodes, true);
+        if (!$shouldIgnore) {
+            foreach ($schemaBootstrapIgnoreMessages as $_ignoreMessage) {
+                if (str_contains($normalizedMessage, $_ignoreMessage)) {
+                    $shouldIgnore = true;
+                    break;
+                }
+            }
+        }
+        if (!$shouldIgnore) {
+            error_log('assets schema bootstrap failed for statement #' . $_sqlIndex . ' (MySQL code: ' . $mysqlErrorCode . '): ' . $exceptionMessage);
+        }
+    }
 }
 
 $categoryMap = [
@@ -151,7 +179,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$linkedExpense) {
                 $errors[] = 'Phiếu chi phí liên quan không tồn tại.';
             } elseif (($linkedExpense['status'] ?? '') !== 'approved') {
-                $errors[] = 'Chỉ được liên kết với phiếu chi phí đã duyệt.';
+                $expenseStatusLabel = match ($linkedExpense['status']) {
+                    'draft' => 'nháp',
+                    'submitted' => 'chờ duyệt',
+                    'rejected' => 'đã từ chối',
+                    default => (string)$linkedExpense['status'],
+                };
+                $errors[] = 'Chỉ được liên kết với phiếu chi phí đã duyệt. Trạng thái hiện tại: ' . $expenseStatusLabel . '.';
             }
         }
 
@@ -328,7 +362,7 @@ if ($filterStatus !== '') {
 $assets = fetchAllSafe(
     $pdo,
     "SELECT ca.*, aa.id AS current_assignment_id, aa.assigned_date AS current_assigned_date, u.full_name AS current_user_name,
-            er.request_no AS expense_request_no, er.purpose AS expense_purpose
+            er.request_no AS expense_request_no, er.purpose AS expense_purpose, er.expense_date AS expense_date
      FROM company_assets ca
      LEFT JOIN asset_assignments aa ON aa.asset_id = ca.id AND aa.returned_date IS NULL
      LEFT JOIN users u ON u.id = aa.user_id
@@ -423,14 +457,44 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <div class="col-md-4"><label class="form-label fw-semibold">Mã tài sản <span class="text-danger">*</span></label><input type="text" name="asset_code" class="form-control" value="<?= e($formValues['asset_code']) ?>" required></div>
                             <div class="col-md-8"><label class="form-label fw-semibold">Tên tài sản <span class="text-danger">*</span></label><input type="text" name="asset_name" class="form-control" value="<?= e($formValues['asset_name']) ?>" required></div>
                             <div class="col-md-4"><label class="form-label fw-semibold">Loại</label><select name="category" class="form-select"><?php foreach ($categoryMap as $value => $label): ?><option value="<?= e($value) ?>" <?= $formValues['category'] === $value ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?></select></div>
-                            <div class="col-md-2"><label class="form-label fw-semibold">Ngày mua</label><input type="date" name="purchase_date" class="form-control" value="<?= e($formValues['purchase_date']) ?>"></div>
-                            <div class="col-md-4"><label class="form-label fw-semibold">Giá mua</label><input type="number" name="purchase_price" class="form-control text-end" min="0" step="0.01" value="<?= e($formValues['purchase_price']) ?>"></div>
-                            <div class="col-md-2"><label class="form-label fw-semibold">Số lượng</label><input type="number" name="quantity" class="form-control text-end" min="1" step="1" value="<?= e($formValues['quantity']) ?>"></div>
-                            <div class="col-md-4"><label class="form-label fw-semibold">Đơn vị tính</label><select name="unit" class="form-select"><option value="">-- Chọn --</option><?php foreach ($assetUnits as $assetUnit): ?><option value="<?= e($assetUnit['unit_name']) ?>" <?= $formValues['unit'] === (string)$assetUnit['unit_name'] ? 'selected' : '' ?>><?= e($assetUnit['unit_name']) ?></option><?php endforeach; ?></select></div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Ngày mua</label>
+                                <input type="date" name="purchase_date" class="form-control" value="<?= e($formValues['purchase_date']) ?>">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold">Giá mua</label>
+                                <input type="number" name="purchase_price" class="form-control text-end" min="0" step="0.01" value="<?= e($formValues['purchase_price']) ?>">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label fw-semibold">Số lượng</label>
+                                <input type="number" name="quantity" class="form-control text-end" min="1" step="1" value="<?= e($formValues['quantity']) ?>">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold">Đơn vị tính</label>
+                                <select name="unit" class="form-select">
+                                    <option value="">-- Chọn --</option>
+                                    <?php foreach ($assetUnits as $assetUnit): ?>
+                                        <option value="<?= e($assetUnit['unit_name']) ?>" <?= $formValues['unit'] === (string)$assetUnit['unit_name'] ? 'selected' : '' ?>>
+                                            <?= e($assetUnit['unit_name']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
                             <div class="col-md-4"><label class="form-label fw-semibold">Nhà cung cấp</label><input type="text" name="supplier" class="form-control" value="<?= e($formValues['supplier']) ?>"></div>
                             <div class="col-md-4"><label class="form-label fw-semibold">Vị trí</label><input type="text" name="location" class="form-control" value="<?= e($formValues['location']) ?>"></div>
                             <div class="col-md-4"><label class="form-label fw-semibold">Trạng thái</label><select name="status" class="form-select"><?php foreach ($statusMap as $value => $meta): ?><?php if ($value === 'assigned') continue; ?><option value="<?= e($value) ?>" <?= $formValues['status'] === $value ? 'selected' : '' ?>><?= e($meta[1]) ?></option><?php endforeach; ?></select></div>
-                            <div class="col-md-6"><label class="form-label fw-semibold">Phiếu chi phí liên quan <span class="text-muted small">(tùy chọn)</span></label><select name="expense_id" class="form-select"><option value="">-- Không có --</option><?php foreach ($approvedExpenses as $expenseOption): ?><option value="<?= (int)$expenseOption['id'] ?>" <?= $formValues['expense_id'] === (string)$expenseOption['id'] ? 'selected' : '' ?>><?= e($expenseOption['request_no']) ?> — <?= e($expenseOption['purpose']) ?> — <?= e(formatCurrency($expenseOption['amount'])) ?></option><?php endforeach; ?></select><div class="form-text">Chọn phiếu chi phí đã duyệt dùng để mua tài sản này.</div></div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Phiếu chi phí liên quan <span class="text-muted small">(tùy chọn)</span></label>
+                                <select name="expense_id" class="form-select">
+                                    <option value="">-- Không có --</option>
+                                    <?php foreach ($approvedExpenses as $expenseOption): ?>
+                                        <option value="<?= (int)$expenseOption['id'] ?>" <?= $formValues['expense_id'] === (string)$expenseOption['id'] ? 'selected' : '' ?>>
+                                            <?= e($expenseOption['request_no']) ?> — <?= e($expenseOption['purpose']) ?> — <?= e(formatCurrency($expenseOption['amount'])) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="form-text">Chọn phiếu chi phí đã duyệt dùng để mua tài sản này.</div>
+                            </div>
                             <div class="col-12"><div class="border-top pt-3 mt-1"><h6 class="mb-3 text-warning"><i class="fas fa-chart-line me-2"></i>Khấu hao tài sản</h6></div></div>
                             <div class="col-md-4"><label class="form-label fw-semibold">Thời gian khấu hao (năm)</label><input type="number" name="depreciation_years" class="form-control text-end" min="0" step="0.01" placeholder="VD: 5" value="<?= e($formValues['depreciation_years']) ?>"></div>
                             <div class="col-md-4"><label class="form-label fw-semibold">Giá trị còn lại</label><input type="number" name="salvage_value" class="form-control text-end" min="0" step="0.01" value="<?= e($formValues['salvage_value']) ?>"></div>
@@ -479,6 +543,13 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <?php foreach ($assets as $asset): ?>
                             <?php [$badgeClass, $statusLabel] = $statusMap[$asset['status']] ?? ['secondary', $asset['status']]; ?>
                             <?php $deprMonth = $calculateDepreciationPerMonth($asset); ?>
+                            <?php
+                            $expenseHref = null;
+                            if (!empty($asset['expense_id']) && !empty($asset['expense_request_no'])) {
+                                $expenseMonth = !empty($asset['expense_date']) ? date('Y-m', strtotime((string)$asset['expense_date'])) : date('Y-m');
+                                $expenseHref = $expensesModuleUrl . '?tab=history&month=' . urlencode($expenseMonth) . '#expense-' . (int)$asset['expense_id'];
+                            }
+                            ?>
                             <tr>
                                 <td class="fw-semibold text-primary"><?= e($asset['asset_code']) ?></td>
                                 <td><div class="fw-semibold"><?= e($asset['asset_name']) ?></div><div class="small text-muted"><?= e($asset['supplier'] ?: '—') ?></div></td>
@@ -488,7 +559,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <td><?= (int)($asset['quantity'] ?? 1) ?> <?= e($asset['unit'] ?: '') ?></td>
                                 <td class="text-end"><?= $deprMonth !== null ? e(number_format($deprMonth, 0, ',', '.') . ' đ/tháng') : '—' ?></td>
                                 <td><?= e($asset['location'] ?: '—') ?></td>
-                                <td><?php if (!empty($asset['expense_id']) && !empty($asset['expense_request_no'])): ?><a href="/erp/modules/admin/expenses.php" class="small text-primary" title="<?= e($asset['expense_purpose'] ?? '') ?>"><?= e($asset['expense_request_no']) ?></a><?php else: ?><span class="text-muted">—</span><?php endif; ?></td>
+                                <td><?php if ($expenseHref !== null): ?><a href="<?= e($expenseHref) ?>" class="small text-primary" title="<?= e($asset['expense_purpose'] ?? '') ?>"><?= e($asset['expense_request_no']) ?></a><?php else: ?><span class="text-muted">—</span><?php endif; ?></td>
                                 <td><span class="badge bg-<?= $badgeClass ?>"><?= e($statusLabel) ?></span><?php if (!empty($asset['current_user_name'])): ?><div class="small text-muted mt-1"><?= e($asset['current_user_name']) ?></div><?php endif; ?></td>
                                 <td>
                                     <div class="d-flex flex-wrap gap-1">
