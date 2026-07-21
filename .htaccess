@@ -4,6 +4,11 @@ DirectoryIndex login.php index.php
 RewriteEngine On
 RewriteBase /erp/
 
+# ZKTeco ADMS endpoints
+RewriteRule ^iclock/cdata$         iclock/cdata.php [L,QSA]
+RewriteRule ^iclock/getrequest$    iclock/getrequest.php [L,QSA]
+RewriteRule ^iclock/devicecmd$     iclock/devicecmd.php [L,QSA]
+
 # Cho phép truy cập trực tiếp vào file tĩnh trong uploads (ảnh chấm công)
 RewriteRule ^uploads/ - [L]
 
