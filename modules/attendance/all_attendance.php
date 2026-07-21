@@ -451,8 +451,20 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             $bg = '#fff'; $content = ''; $title = '';
 
                             if ($isSun) {
-                                $bg = '#f5f5f5';
-                                $content = '<span style="color:#ccc;font-size:10px;">—</span>';
+                                if ($att && $att['check_in']) {
+                                    $bg = '#f3e8ff';
+                                    $checkIn  = date('H:i', strtotime($att['check_in']));
+                                    $checkOut = $att['check_out'] ? date('H:i', strtotime($att['check_out'])) : '?';
+                                    $title = "CN | Vào: $checkIn | Ra: $checkOut";
+                                    $content = '<div style="font-size:9px;line-height:1.4;">';
+                                    $content .= '<span style="color:#7c3aed;font-weight:bold;">CN</span><br>';
+                                    $content .= '<span style="color:#333;">' . $checkIn . '</span><br>';
+                                    $content .= '<span style="color:#666;">' . $checkOut . '</span>';
+                                    $content .= '</div>';
+                                } else {
+                                    $bg = '#f5f5f5';
+                                    $content = '<span style="color:#ccc;font-size:10px;">—</span>';
+                                }
                             } elseif ($isHoliday && !$att) {
                                 $bg = '#fff0f0';
                                 $content = '<span style="font-size:11px;" title="Ngày lễ">🎉</span>';
@@ -1015,15 +1027,9 @@ async function deleteAttendance(userId, dateStr) {
 }
 
 function exportExcel() {
-    const tableId = document.getElementById('summaryTable') ? 'summaryTable' : 'attTable';
-    const table   = document.getElementById(tableId);
-    if (!table) { alert('Vui lòng chuyển sang chế độ Tổng hợp để xuất Excel.'); return; }
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.table_to_sheet(table);
-    XLSX.utils.book_append_sheet(wb, ws, 'Chấm công T<?= $viewMonth ?>/<?= $viewYear ?>');
-    XLSX.writeFile(wb, `ChamCong_T<?= $viewMonth ?>_<?= $viewYear ?>.xlsx`);
+    const params = new URLSearchParams(window.location.search);
+    window.location.href = '/erp/api/attendance/export_attendance_excel.php?' + params.toString();
 }
 </script>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <?php include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/footer.php'; ?>
