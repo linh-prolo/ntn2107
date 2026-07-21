@@ -6,6 +6,11 @@
  * GET  /erp/iclock/cdata?SN=xxx&options=all  → Handshake / trả cấu hình cho máy
  * POST /erp/iclock/cdata?SN=xxx&table=ATTLOG → Nhận log chấm công từ máy
  *
+ * Logic lấy dữ liệu:
+ *   - Lần chấm ĐẦU TIÊN trong ngày → lưu làm check_in
+ *   - Lần chấm THỨ 2 trở đi        → luôn ghi đè check_out (giữ lại lần cuối cùng)
+ *   - Chấp nhận MỌI giá trị status (kể cả 255) — không lọc theo status
+ *
  * KHÔNG dùng requireRole() hay session — máy gọi trực tiếp không có session.
  */
 
@@ -67,20 +72,45 @@ if ($table !== 'ATTLOG') {
 $deviceSN = $formData['SErialNumber'] ?? $formData['sn'] ?? $sn;
 $dataStr  = $formData['data'] ?? '';
 
-// Parse từng dòng chấm công
-// Mỗi dòng: PIN\tTime\tStatus\tVerify\tWorkCode\tReserved
+// ── Parse từng dòng chấm công ─────────────────────────────────────────────
+// Máy có thể gửi 2 format:
+//   Tab-separated : "PIN\tDATE TIME\tSTATUS\t..."  (firmware mới)
+//   Space-separated: "PIN DATE TIME STATUS ..."     (firmware cũ / SpeedFace V5L)
+//
+// Log thực tế: "1 2026-07-21 20:56:42 255 15 0 0 0 0 0 55"
+//   fields[0] = PIN
+//   fields[1] = DATE (YYYY-MM-DD)
+//   fields[2] = TIME (HH:MM:SS)
+//   fields[3] = STATUS (bỏ qua — dùng logic đầu/cuối thay thế)
+
 $records = [];
 foreach (explode("\n", $dataStr) as $line) {
     $line = trim($line);
     if ($line === '') continue;
-    $fields = explode("\t", $line);
-    if (count($fields) < 2) continue;
+
+    // Thử tab-separated trước
+    if (strpos($line, "\t") !== false) {
+        $fields = explode("\t", $line);
+        $pin     = trim($fields[0] ?? '');
+        $timeStr = trim($fields[1] ?? ''); // "YYYY-MM-DD HH:MM:SS"
+    } else {
+        // Space-separated: PIN DATE TIME STATUS ...
+        $fields  = preg_split('/\s+/', $line);
+        $pin     = trim($fields[0] ?? '');
+        $date    = trim($fields[1] ?? '');
+        $time    = trim($fields[2] ?? '');
+        $timeStr = $date . ' ' . $time; // ghép lại "YYYY-MM-DD HH:MM:SS"
+    }
+
+    if ($pin === '' || $timeStr === '' || trim($timeStr) === '') continue;
+
     $records[] = [
-        'pin'    => trim($fields[0]),
-        'time'   => trim($fields[1]),
-        'status' => (int)(trim($fields[2] ?? '0')),
+        'pin'  => $pin,
+        'time' => trim($timeStr),
     ];
 }
+
+zkLog("PARSED_RECORDS | count=" . count($records) . " | " . json_encode($records));
 
 if (empty($records)) {
     http_response_code(200);
@@ -88,19 +118,23 @@ if (empty($records)) {
     exit;
 }
 
-// ── Xử lý từng bản ghi ────────────────────────────────────────────────────
+// ── Xử lý từng bản ghi — logic ĐẦU/CUỐI ──────────────────────────────────
+// Lần chấm đầu tiên trong ngày → check_in
+// Lần thứ 2 trở đi             → ghi đè check_out (giữ lần cuối cùng)
 try {
     $pdo = getDBConnection();
 
     foreach ($records as $row) {
         $pin     = $row['pin'];
         $timeStr = $row['time'];
-        $status  = $row['status']; // 0,4 = check-in; 1,5 = check-out
 
         if ($pin === '' || $timeStr === '') continue;
 
         $timeTs = strtotime($timeStr);
-        if ($timeTs === false) continue;
+        if ($timeTs === false) {
+            zkLog("PARSE_TIME_FAIL | pin=$pin | timeStr=$timeStr");
+            continue;
+        }
         $workDate = date('Y-m-d', $timeTs);
 
         // Tìm user theo employee_code
@@ -122,11 +156,13 @@ try {
         $stmtL->execute([$userId, $workDate]);
         $existing = $stmtL->fetch(PDO::FETCH_ASSOC);
 
-        if ($status === 0 || $status === 4) {
-            // ── CHECK-IN ───────────────────────────────────────────────────
+        // ── Lần ĐẦU TIÊN: chưa có check_in → lưu làm check_in ──────────
+        if (!$existing || empty($existing['check_in'])) {
+
             $isLate      = 0;
             $lateMinutes = 0;
 
+            // Tính đi trễ từ ca làm việc
             $stmtS = $pdo->prepare("
                 SELECT ws.start_time, ws.late_threshold
                 FROM employee_shifts es
@@ -140,6 +176,7 @@ try {
             $stmtS->execute([$userId, $workDate, $workDate]);
             $shift = $stmtS->fetch(PDO::FETCH_ASSOC);
 
+            // Fallback: dùng ca hành chính mặc định
             if (!$shift) {
                 try {
                     $stmtDef = $pdo->prepare(
@@ -162,22 +199,20 @@ try {
             }
 
             if ($existing) {
-                if (empty($existing['check_in'])) {
-                    $pdo->prepare("
-                        UPDATE attendance_logs
-                        SET check_in     = ?,
-                            source       = 'device',
-                            device_sn    = ?,
-                            is_late      = ?,
-                            late_minutes = ?,
-                            updated_at   = NOW()
-                        WHERE id = ?
-                    ")->execute([$timeStr, $deviceSN, $isLate, $lateMinutes, $existing['id']]);
-                    zkLog("CHECK_IN_UPDATE | user=$userId | time=$timeStr");
-                } else {
-                    zkLog("CHECK_IN_SKIP (already set) | user=$userId");
-                }
+                // Có record nhưng check_in rỗng → UPDATE
+                $pdo->prepare("
+                    UPDATE attendance_logs
+                    SET check_in     = ?,
+                        source       = 'device',
+                        device_sn    = ?,
+                        is_late      = ?,
+                        late_minutes = ?,
+                        updated_at   = NOW()
+                    WHERE id = ?
+                ")->execute([$timeStr, $deviceSN, $isLate, $lateMinutes, $existing['id']]);
+                zkLog("CHECK_IN_UPDATE | user=$userId | time=$timeStr");
             } else {
+                // Chưa có record → INSERT
                 $pdo->prepare("
                     INSERT INTO attendance_logs
                         (user_id, work_date, check_in, source, device_sn, is_late, late_minutes, created_at)
@@ -186,13 +221,8 @@ try {
                 zkLog("CHECK_IN_INSERT | user=$userId | time=$timeStr");
             }
 
-        } elseif ($status === 1 || $status === 5) {
-            // ── CHECK-OUT ──────────────────────────────────────────────────
-            if (!$existing || empty($existing['check_in'])) {
-                zkLog("CHECK_OUT_SKIP (no check_in) | user=$userId");
-                continue;
-            }
-
+        } else {
+            // ── Lần THỨ 2 trở đi → ghi đè check_out ────────────────────
             $checkInTs  = strtotime($existing['check_in']);
             $checkOutTs = $timeTs;
 
@@ -201,10 +231,17 @@ try {
                 $checkOutTs += 86400;
             }
 
+            // Bỏ qua nếu thời gian ra ≤ thời gian vào (bản ghi lỗi)
+            if ($checkOutTs <= $checkInTs) {
+                zkLog("CHECK_OUT_SKIP (time <= check_in) | user=$userId | time=$timeStr");
+                continue;
+            }
+
             $workHours    = round(($checkOutTs - $checkInTs) / 3600, 2);
             $earlyLeave   = 0;
             $earlyMinutes = 0;
 
+            // Tính về sớm từ ca làm việc
             $stmtS2 = $pdo->prepare("
                 SELECT ws.start_time, ws.end_time
                 FROM employee_shifts es
@@ -233,6 +270,7 @@ try {
             if ($shift2 && !empty($shift2['end_time'])) {
                 $shiftStart2 = strtotime($workDate . ' ' . $shift2['start_time']);
                 $shiftEnd    = strtotime($workDate . ' ' . $shift2['end_time']);
+                // Ca đêm: end_time < start_time → +1 ngày
                 if ($shiftEnd <= $shiftStart2) {
                     $shiftEnd += 86400;
                 }
@@ -258,7 +296,7 @@ try {
         }
     }
 } catch (Throwable $e) {
-    zkLog('ERROR | ' . $e->getMessage());
+    zkLog('ERROR | ' . $e->getMessage() . ' | ' . $e->getTraceAsString());
 }
 
 http_response_code(200);
