@@ -6,6 +6,10 @@
  * GET  /erp/iclock/cdata?SN=xxx&options=all  → Handshake / trả cấu hình cho máy
  * POST /erp/iclock/cdata?SN=xxx&table=ATTLOG → Nhận log chấm công từ máy
  *
+ * Logic lấy dữ liệu:
+ *   - Lần chấm ĐẦU TIÊN trong ngày → lưu làm check_in
+ *   - Lần chấm THỨ 2 trở đi        → luôn ghi đè check_out (giữ lại lần cuối cùng)
+ *
  * KHÔNG dùng requireRole() hay session — máy gọi trực tiếp không có session.
  */
 
@@ -95,7 +99,7 @@ try {
     foreach ($records as $row) {
         $pin     = $row['pin'];
         $timeStr = $row['time'];
-        $status  = $row['status']; // 0,4 = check-in; 1,5 = check-out
+        $status  = $row['status']; // 0,4 = check-in zone; 1,5 = check-out zone
 
         if ($pin === '' || $timeStr === '') continue;
 
@@ -122,11 +126,13 @@ try {
         $stmtL->execute([$userId, $workDate]);
         $existing = $stmtL->fetch(PDO::FETCH_ASSOC);
 
-        if ($status === 0 || $status === 4) {
-            // ── CHECK-IN ───────────────────────────────────────────────────
+        // ── Lần ĐẦU TIÊN trong ngày (chưa có check_in) → lưu làm check_in ──
+        if (!$existing || empty($existing['check_in'])) {
+
             $isLate      = 0;
             $lateMinutes = 0;
 
+            // Tính đi trễ từ ca làm việc
             $stmtS = $pdo->prepare("
                 SELECT ws.start_time, ws.late_threshold
                 FROM employee_shifts es
@@ -140,6 +146,7 @@ try {
             $stmtS->execute([$userId, $workDate, $workDate]);
             $shift = $stmtS->fetch(PDO::FETCH_ASSOC);
 
+            // Fallback: dùng ca hành chính mặc định
             if (!$shift) {
                 try {
                     $stmtDef = $pdo->prepare(
@@ -162,22 +169,20 @@ try {
             }
 
             if ($existing) {
-                if (empty($existing['check_in'])) {
-                    $pdo->prepare("
-                        UPDATE attendance_logs
-                        SET check_in     = ?,
-                            source       = 'device',
-                            device_sn    = ?,
-                            is_late      = ?,
-                            late_minutes = ?,
-                            updated_at   = NOW()
-                        WHERE id = ?
-                    ")->execute([$timeStr, $deviceSN, $isLate, $lateMinutes, $existing['id']]);
-                    zkLog("CHECK_IN_UPDATE | user=$userId | time=$timeStr");
-                } else {
-                    zkLog("CHECK_IN_SKIP (already set) | user=$userId");
-                }
+                // Có record nhưng check_in rỗng → UPDATE
+                $pdo->prepare("
+                    UPDATE attendance_logs
+                    SET check_in     = ?,
+                        source       = 'device',
+                        device_sn    = ?,
+                        is_late      = ?,
+                        late_minutes = ?,
+                        updated_at   = NOW()
+                    WHERE id = ?
+                ")->execute([$timeStr, $deviceSN, $isLate, $lateMinutes, $existing['id']]);
+                zkLog("CHECK_IN_UPDATE | user=$userId | time=$timeStr");
             } else {
+                // Chưa có record → INSERT
                 $pdo->prepare("
                     INSERT INTO attendance_logs
                         (user_id, work_date, check_in, source, device_sn, is_late, late_minutes, created_at)
@@ -186,12 +191,16 @@ try {
                 zkLog("CHECK_IN_INSERT | user=$userId | time=$timeStr");
             }
 
-        } elseif ($status === 1 || $status === 5) {
-            // ── CHECK-OUT ──────────────────────────────────────────────────
-            if (!$existing || empty($existing['check_in'])) {
-                zkLog("CHECK_OUT_SKIP (no check_in) | user=$userId");
-                continue;
-            }
+        } else {
+            // ── Lần THỨ 2 trở đi → luôn ghi đè check_out (giữ lại lần cuối cùng) ──
+            //
+            // Lý do: máy SpeedFace V5L thường gửi tất cả status=0, không phân biệt
+            // vào/ra. Logic này đảm bảo:
+            //   - check_in  = lần chấm ĐẦU TIÊN trong ngày
+            //   - check_out = lần chấm CUỐI CÙNG trong ngày (liên tục ghi đè)
+            //
+            // Nếu máy đã cấu hình phân biệt In/Out (status=1 hoặc 5) thì cũng
+            // rơi vào nhánh này và xử lý đúng.
 
             $checkInTs  = strtotime($existing['check_in']);
             $checkOutTs = $timeTs;
@@ -201,10 +210,18 @@ try {
                 $checkOutTs += 86400;
             }
 
+            // Bỏ qua nếu thời gian ra nhỏ hơn hoặc bằng thời gian vào
+            // (tránh ghi nhầm khi máy gửi lại bản ghi cũ)
+            if ($checkOutTs <= $checkInTs) {
+                zkLog("CHECK_OUT_SKIP (time <= check_in) | user=$userId | time=$timeStr");
+                continue;
+            }
+
             $workHours    = round(($checkOutTs - $checkInTs) / 3600, 2);
             $earlyLeave   = 0;
             $earlyMinutes = 0;
 
+            // Tính về sớm từ ca làm việc
             $stmtS2 = $pdo->prepare("
                 SELECT ws.start_time, ws.end_time
                 FROM employee_shifts es
@@ -233,6 +250,7 @@ try {
             if ($shift2 && !empty($shift2['end_time'])) {
                 $shiftStart2 = strtotime($workDate . ' ' . $shift2['start_time']);
                 $shiftEnd    = strtotime($workDate . ' ' . $shift2['end_time']);
+                // Ca đêm: end_time < start_time → +1 ngày
                 if ($shiftEnd <= $shiftStart2) {
                     $shiftEnd += 86400;
                 }
