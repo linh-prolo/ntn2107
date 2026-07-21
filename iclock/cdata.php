@@ -54,43 +54,77 @@ if ($method === 'GET') {
 $raw = file_get_contents('php://input');
 zkLog("ATTLOG_RAW | SN=$sn | " . $raw);
 
-// Parse body
+// Parse body — thử parse_str trước (firmware cũ gửi dạng form urlencoded)
 parse_str($raw, $formData);
-// Fallback sang $_POST
 if (empty($formData['table'])) {
     $formData = $_POST;
 }
 
-$table = $formData['table'] ?? $_GET['table'] ?? '';
+$table    = $formData['table'] ?? $_GET['table'] ?? '';
+$deviceSN = $formData['SErialNumber'] ?? $formData['sn'] ?? $sn;
 
-if ($table !== 'ATTLOG') {
+// ── Xác định $dataStr ──────────────────────────────────────────────────────
+// SpeedFace V5L có thể gửi theo nhiều cách:
+//
+// Cách 1 (form urlencoded, firmware chuẩn):
+//   table=ATTLOG&SErialNumber=AJE...&data=1%092026-07-21%2021%3A04%3A42%09255%09...
+//   → parse_str() decode thành $formData['data']
+//
+// Cách 2 (raw body, một số firmware):
+//   ATTLOG
+//   1	2026-07-21 21:04:42	255	15	0	0
+//   → $table rỗng, raw body chứa trực tiếp các dòng
+//
+// Cách 3 (raw body không có key=value):
+//   1 2026-07-21 21:04:42 255 15 0 0 0 0 0 58
+//   → parse_str() không parse được, $formData rỗng
+
+$dataStr = $formData['data'] ?? '';
+
+// Nếu $dataStr rỗng → thử lấy từ raw body trực tiếp
+if ($dataStr === '') {
+    // Kiểm tra raw body có chứa dòng dữ liệu chấm công không
+    // (dòng bắt đầu bằng số = PIN)
+    $rawLines = explode("\n", trim($raw));
+    $dataLines = [];
+    foreach ($rawLines as $rl) {
+        $rl = trim($rl);
+        // Bỏ qua dòng header dạng "key=value" hoặc dòng trống
+        if ($rl === '' || strpos($rl, 'table=') === 0 || strpos($rl, 'ATTLOG') === 0) continue;
+        // Dòng hợp lệ: bắt đầu bằng chữ số (PIN)
+        if (preg_match('/^\d/', $rl)) {
+            $dataLines[] = $rl;
+        }
+    }
+    $dataStr = implode("\n", $dataLines);
+    zkLog("DATA_FROM_RAW | dataStr=" . $dataStr);
+}
+
+// Nếu table vẫn rỗng nhưng $dataStr có dữ liệu → vẫn xử lý
+if ($table !== 'ATTLOG' && $dataStr === '') {
     http_response_code(200);
     echo 'OK';
     exit;
 }
 
-$deviceSN = $formData['SErialNumber'] ?? $formData['sn'] ?? $sn;
-$dataStr  = $formData['data'] ?? '';
-
 // ── Parse từng dòng chấm công ─────────────────────────────────────────────
-// Máy có thể gửi 2 format:
-//   Tab-separated : "PIN\tDATE TIME\tSTATUS\t..."  (firmware mới)
-//   Space-separated: "PIN DATE TIME STATUS ..."     (firmware cũ / SpeedFace V5L)
+// Format tab  : "PIN\tYYYY-MM-DD HH:MM:SS\tSTATUS\t..."
+// Format space: "PIN YYYY-MM-DD HH:MM:SS STATUS ..."
 //
-// Log thực tế: "1 2026-07-21 20:56:42 255 15 0 0 0 0 0 55"
+// Log thực tế : "1 2026-07-21 20:56:42 255 15 0 0 0 0 0 55"
 //   fields[0] = PIN
 //   fields[1] = DATE (YYYY-MM-DD)
 //   fields[2] = TIME (HH:MM:SS)
-//   fields[3] = STATUS (bỏ qua — dùng logic đầu/cuối thay thế)
+//   fields[3..] = bỏ qua
 
 $records = [];
 foreach (explode("\n", $dataStr) as $line) {
     $line = trim($line);
     if ($line === '') continue;
 
-    // Thử tab-separated trước
     if (strpos($line, "\t") !== false) {
-        $fields = explode("\t", $line);
+        // Tab-separated
+        $fields  = explode("\t", $line);
         $pin     = trim($fields[0] ?? '');
         $timeStr = trim($fields[1] ?? ''); // "YYYY-MM-DD HH:MM:SS"
     } else {
@@ -99,10 +133,13 @@ foreach (explode("\n", $dataStr) as $line) {
         $pin     = trim($fields[0] ?? '');
         $date    = trim($fields[1] ?? '');
         $time    = trim($fields[2] ?? '');
-        $timeStr = $date . ' ' . $time; // ghép lại "YYYY-MM-DD HH:MM:SS"
+        $timeStr = $date . ' ' . $time;
     }
 
-    if ($pin === '' || $timeStr === '' || trim($timeStr) === '') continue;
+    if ($pin === '' || trim($timeStr) === ' ' || trim($timeStr) === '') continue;
+
+    // Validate datetime
+    if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', trim($timeStr))) continue;
 
     $records[] = [
         'pin'  => $pin,
@@ -119,8 +156,6 @@ if (empty($records)) {
 }
 
 // ── Xử lý từng bản ghi — logic ĐẦU/CUỐI ──────────────────────────────────
-// Lần chấm đầu tiên trong ngày → check_in
-// Lần thứ 2 trở đi             → ghi đè check_out (giữ lần cuối cùng)
 try {
     $pdo = getDBConnection();
 
@@ -162,7 +197,6 @@ try {
             $isLate      = 0;
             $lateMinutes = 0;
 
-            // Tính đi trễ từ ca làm việc
             $stmtS = $pdo->prepare("
                 SELECT ws.start_time, ws.late_threshold
                 FROM employee_shifts es
@@ -176,7 +210,6 @@ try {
             $stmtS->execute([$userId, $workDate, $workDate]);
             $shift = $stmtS->fetch(PDO::FETCH_ASSOC);
 
-            // Fallback: dùng ca hành chính mặc định
             if (!$shift) {
                 try {
                     $stmtDef = $pdo->prepare(
@@ -199,7 +232,6 @@ try {
             }
 
             if ($existing) {
-                // Có record nhưng check_in rỗng → UPDATE
                 $pdo->prepare("
                     UPDATE attendance_logs
                     SET check_in     = ?,
@@ -212,7 +244,6 @@ try {
                 ")->execute([$timeStr, $deviceSN, $isLate, $lateMinutes, $existing['id']]);
                 zkLog("CHECK_IN_UPDATE | user=$userId | time=$timeStr");
             } else {
-                // Chưa có record → INSERT
                 $pdo->prepare("
                     INSERT INTO attendance_logs
                         (user_id, work_date, check_in, source, device_sn, is_late, late_minutes, created_at)
@@ -226,12 +257,10 @@ try {
             $checkInTs  = strtotime($existing['check_in']);
             $checkOutTs = $timeTs;
 
-            // Ca đêm: check_out < check_in → cộng 1 ngày
             if ($checkOutTs < $checkInTs) {
                 $checkOutTs += 86400;
             }
 
-            // Bỏ qua nếu thời gian ra ≤ thời gian vào (bản ghi lỗi)
             if ($checkOutTs <= $checkInTs) {
                 zkLog("CHECK_OUT_SKIP (time <= check_in) | user=$userId | time=$timeStr");
                 continue;
@@ -241,7 +270,6 @@ try {
             $earlyLeave   = 0;
             $earlyMinutes = 0;
 
-            // Tính về sớm từ ca làm việc
             $stmtS2 = $pdo->prepare("
                 SELECT ws.start_time, ws.end_time
                 FROM employee_shifts es
@@ -270,7 +298,6 @@ try {
             if ($shift2 && !empty($shift2['end_time'])) {
                 $shiftStart2 = strtotime($workDate . ' ' . $shift2['start_time']);
                 $shiftEnd    = strtotime($workDate . ' ' . $shift2['end_time']);
-                // Ca đêm: end_time < start_time → +1 ngày
                 if ($shiftEnd <= $shiftStart2) {
                     $shiftEnd += 86400;
                 }
