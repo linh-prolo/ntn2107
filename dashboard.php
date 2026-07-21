@@ -150,7 +150,8 @@ if (hasRole('manager')) {
             WHERE MONTH(po.created_at)=? AND YEAR(po.created_at)=?
         ");
         $stmtErr->execute([$currentMonth, $currentYear]);
-        [$qtyError, $qtyTotal] = $stmtErr->fetch(\PDO::FETCH_NUM) ?: [0, 0];
+        $row = $stmtErr->fetch(\PDO::FETCH_NUM);
+        [$qtyError, $qtyTotal] = $row ?: [0, 0];
         $kpi['error_rate'] = ($qtyTotal > 0) ? round($qtyError / $qtyTotal * 100, 1) : 0;
         $kpi['error_qty']  = (int)$qtyError;
         $kpi['total_qty']  = (int)$qtyTotal;
@@ -305,7 +306,7 @@ include 'includes/sidebar.php';
             <p class="text-muted mb-0">
                 <span class="badge bg-<?= $badge['class'] ?>"><?= $badge['icon'] ?> <?= $badge['label'] ?></span>
                 &nbsp; <i class="far fa-calendar me-1"></i><?= date('l, d/m/Y') ?>
-                &nbsp; <i class="far fa-clock me-1"></i><span id="live-clock"><?= date('H:i') ?></span>
+                &nbsp; <i class="far fa-clock me-1"></i><span id="live-clock" aria-label="Giờ hiện tại"><?= date('H:i') ?></span>
             </p>
         </div>
     </div>
@@ -380,13 +381,13 @@ include 'includes/sidebar.php';
             </a>
         </div>
         <div class="col-6 col-md-3">
-            <?php [$psc,$psl] = $statusPayrollMap[$latestPeriod['status'] ?? ''] ?? ['secondary','—']; ?>
+            <?php [$periodStatusClass, $periodStatusLabel] = $statusPayrollMap[$latestPeriod['status'] ?? ''] ?? ['secondary', '—']; ?>
             <a href="/erp/modules/payroll/index.php" class="text-decoration-none">
             <div class="kpi-card kpi-light <?= $pendingPayrolls > 0 ? 'kpi-border-warning' : '' ?>">
                 <div class="kpi-icon">💰</div>
                 <div class="kpi-label">Kỳ lương hiện tại</div>
                 <div class="kpi-value fs-6"><?= $latestPeriod ? ('Tháng '.$latestPeriod['period_month'].'/'.$latestPeriod['period_year']) : '—' ?></div>
-                <div class="kpi-sub"><span class="badge bg-<?= $psc ?>"><?= $psl ?></span><?= $pendingPayrolls > 0 ? ' <span class="badge bg-warning text-dark ms-1">'.$pendingPayrolls.' chờ duyệt</span>' : '' ?></div>
+                <div class="kpi-sub"><span class="badge bg-<?= $periodStatusClass ?>"><?= $periodStatusLabel ?></span><?= $pendingPayrolls > 0 ? ' <span class="badge bg-warning text-dark ms-1">'.$pendingPayrolls.' chờ duyệt</span>' : '' ?></div>
             </div>
             </a>
         </div>
@@ -501,12 +502,12 @@ include 'includes/sidebar.php';
         </div>
         <div class="col-6 col-md-3">
             <a href="/erp/modules/payroll/index.php" class="text-decoration-none">
-            <?php [$psc2,$psl2] = $statusPayrollMap[$latestPeriod['status'] ?? ''] ?? ['secondary','—']; ?>
+            <?php [$periodStatusClass, $periodStatusLabel] = $statusPayrollMap[$latestPeriod['status'] ?? ''] ?? ['secondary', '—']; ?>
             <div class="kpi-card kpi-light">
                 <div class="kpi-icon">💰</div>
                 <div class="kpi-label">Kỳ lương hiện tại</div>
                 <div class="kpi-value fs-6"><?= $latestPeriod ? ('Tháng '.$latestPeriod['period_month'].'/'.$latestPeriod['period_year']) : '—' ?></div>
-                <div class="kpi-sub"><span class="badge bg-<?= $psc2 ?>"><?= $psl2 ?></span></div>
+                <div class="kpi-sub"><span class="badge bg-<?= $periodStatusClass ?>"><?= $periodStatusLabel ?></span></div>
             </div>
             </a>
         </div>
@@ -792,7 +793,7 @@ include 'includes/sidebar.php';
 .kpi-danger  { border-left: 4px solid #dc3545; }
 .kpi-danger  .kpi-value { color: #dc3545; }
 .kpi-warning { border-left: 4px solid #ffc107; background: #fffdf0; }
-.kpi-warning .kpi-value { color: #997700; }
+.kpi-warning .kpi-value { color: #664d00; }
 .kpi-info    { border-left: 4px solid #0dcaf0; }
 .kpi-info    .kpi-value { color: #0a8fa8; }
 .kpi-light   { border-left: 4px solid #dee2e6; }
@@ -822,7 +823,7 @@ include 'includes/sidebar.php';
 
 <script>
 (function() {
-    function pad(n) { return String(n).padStart(2,'0'); }
+    function pad(n) { return n.toString().padStart(2, '0'); }
     function tick() {
         var d = new Date();
         var el = document.getElementById('live-clock');
