@@ -18,7 +18,7 @@ if (isGroupActive(['/modules/users/profile', '/modules/users/change_password']))
 elseif (isGroupActive(['/attendance/', '/leave_request', '/ot_request', '/all_attendance',
                         '/leave_manage', '/ot_manage', '/shift_schedule', '/shift_assign', '/shift_setup',
                         '/location_settings', '/department_location_policy', '/manual_attendance',
-                        '/payroll/holidays'])) $activeGroup = 'attendance';
+                        '/payroll/holidays', '/zkteco_devices'])) $activeGroup = 'attendance';
 elseif (isGroupActive(['/payroll/'])) $activeGroup = 'payroll';
 elseif (isGroupActive(['/master/'])) $activeGroup = 'master';
 elseif (isGroupActive(['/warehouse/'])) $activeGroup = 'wh_sx';
@@ -97,6 +97,8 @@ elseif (isGroupActive(['/modules/users/index'])) $activeGroup = 'system';
           <i class="fas fa-building"></i><span>Vị trí CC theo PB</span></a></li>
         <li><a class="nav-link <?= isActive('/payroll/holidays') ?>" href="/erp/modules/payroll/holidays.php">
           <i class="fas fa-calendar-times"></i><span>Ngày lễ</span></a></li>
+        <li><a class="nav-link <?= isActive('/zkteco_devices') ?>" href="/erp/modules/attendance/zkteco_devices.php">
+          <i class="fas fa-fingerprint"></i><span>Máy chấm công</span></a></li>
         <?php endif; ?>
       </ul>
     </li>
