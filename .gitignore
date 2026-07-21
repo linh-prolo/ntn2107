@@ -14,6 +14,9 @@ error_log
 *.log
 api/payroll/error_log
 
+# ZKTeco debug logs (thư mục logs/ được track qua .gitkeep)
+logs/*.log
+
 # Composer dependencies (install with: composer install)
 vendor/
 
