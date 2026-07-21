@@ -84,32 +84,34 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
             <i class="fas fa-info-circle text-info me-2"></i>Hướng dẫn cấu hình máy ZKTeco SpeedFace V5L
           </div>
           <div class="card-body">
-            <p class="mb-2 text-muted small">URL endpoint nhận dữ liệu push từ máy:</p>
+            <?php
+            $scheme      = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $serverBase  = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'ntnvn.com') . '/erp';
+            ?>
+            <p class="mb-2 text-muted small">Server Address điền trên máy (chỉ đến <code>/erp</code>, máy tự gọi đúng endpoint <code>/iclock/cdata</code>):</p>
             <div class="input-group mb-3">
               <input type="text" class="form-control form-control-sm font-monospace"
                      id="endpointUrl"
-                     value="http://[YOUR_DOMAIN]/erp/api/attendance/zkteco_push.php?token=ZKTECO_SECRET_TOKEN_2024"
+                     value="<?= htmlspecialchars($serverBase, ENT_QUOTES, 'UTF-8') ?>"
                      readonly>
               <button class="btn btn-outline-secondary btn-sm" onclick="copyEndpoint()" title="Sao chép">
                 <i class="fas fa-copy"></i>
               </button>
+            </div>
+            <div class="alert alert-info py-2 small mb-3">
+              <i class="fas fa-info-circle me-1"></i>
+              <strong>Lưu ý:</strong> Chỉ điền địa chỉ đến <code>/erp</code>, máy sẽ tự động gọi đúng endpoint <code>/iclock/cdata</code> theo giao thức ADMS. Không cần điền đường dẫn file cụ thể.
             </div>
             <hr>
             <p class="fw-semibold mb-2"><i class="fas fa-list-ol me-1 text-primary"></i>Các bước cài đặt trên màn hình máy:</p>
             <ol class="mb-0 small lh-lg">
               <li>Vào <strong>Menu → Communication → Cloud Server Settings</strong></li>
               <li>Bật <strong>ADMS / Push Mode</strong></li>
-              <li>Điền <strong>Server Address</strong> = URL endpoint ở trên</li>
-              <li>Port: <strong>80</strong> (hoặc 443 nếu HTTPS)</li>
+              <li>Điền <strong>Server Address</strong> = <code><?= htmlspecialchars($serverBase, ENT_QUOTES, 'UTF-8') ?></code></li>
+              <li>Port: <strong>80</strong></li>
               <li>Chọn <strong>Enable Push</strong> → Lưu và khởi động lại máy</li>
               <li>Chấm công thử → kiểm tra log bên dưới</li>
             </ol>
-            <div class="alert alert-warning mt-3 mb-0 py-2 small">
-              <i class="fas fa-exclamation-triangle me-1"></i>
-              <strong>Lưu ý bảo mật:</strong> Đổi token <code>ZKTECO_SECRET_TOKEN_2024</code>
-              bằng cách đặt biến môi trường <code>ZKTECO_TOKEN</code> trên server hoặc
-              chỉnh trực tiếp trong <code>api/attendance/zkteco_push.php</code>.
-            </div>
           </div>
         </div>
       </div>
