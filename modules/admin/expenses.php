@@ -7,6 +7,7 @@ requireRole('director', 'accountant', 'manager');
 
 $pdo = getDBConnection();
 $user = currentUser();
+$assetsModuleUrl = '/erp/modules/admin/assets.php';
 $canApprove = hasRole('director');
 $canManageCategories = hasRole('director', 'accountant');
 $canViewHistory = hasRole('director', 'accountant', 'manager');
@@ -485,6 +486,21 @@ if ($expenseIds) {
         $paymentsByExpense[(int)$payment['expense_id']][] = $payment;
     }
 }
+$linkedAssetsByExpense = [];
+if ($expenseIds) {
+    $placeholders = implode(',', array_fill(0, count($expenseIds), '?'));
+    $linkedAssets = fetchAllSafe(
+        $pdo,
+        "SELECT id, expense_id, asset_code, asset_name, quantity, unit
+         FROM company_assets
+         WHERE expense_id IN ($placeholders)
+         ORDER BY id DESC",
+        $expenseIds
+    );
+    foreach ($linkedAssets as $linkedAsset) {
+        $linkedAssetsByExpense[(int)$linkedAsset['expense_id']][] = $linkedAsset;
+    }
+}
 
 $pendingCount = (int)fetchScalarSafe($pdo, "SELECT COUNT(*) FROM expense_requests WHERE status = 'submitted'", [], 0);
 $mineCount = (int)fetchScalarSafe($pdo, 'SELECT COUNT(*) FROM expense_requests WHERE requested_by = ?', [currentUserId()], 0);
@@ -836,7 +852,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                     default => 'Nháp',
                                 };
                                 ?>
-                                <tr>
+                                <tr id="expense-<?= (int)$expense['id'] ?>">
                                     <td class="fw-semibold text-primary"><?= e($expense['request_no']) ?></td>
                                     <td><?= e(formatDate($expense['expense_date'])) ?></td>
                                     <td><?= e($expense['category_name']) ?></td>
@@ -848,6 +864,17 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                         <?php endif; ?>
                                         <?php if ($expense['status'] === 'rejected' && !empty($expense['reject_reason'])): ?>
                                             <div class="small text-danger">Lý do từ chối: <?= e($expense['reject_reason']) ?></div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($linkedAssetsByExpense[(int)$expense['id']])): ?>
+                                            <div class="small text-success mt-1">
+                                                <i class="fas fa-tag me-1"></i>Tài sản:
+                                                <?php foreach ($linkedAssetsByExpense[(int)$expense['id']] as $linkedAsset): ?>
+                                                    <a href="<?= e($assetsModuleUrl . '?action=edit&id=' . (int)$linkedAsset['id'] . '&show_form=1') ?>#asset-form-card" class="text-success me-2">
+                                                        <?= e($linkedAsset['asset_code']) ?> <?= e($linkedAsset['asset_name']) ?>
+                                                        (<?= (int)($linkedAsset['quantity'] ?? 1) ?> <?= e($linkedAsset['unit'] ?: '') ?>)
+                                                    </a>
+                                                <?php endforeach; ?>
+                                            </div>
                                         <?php endif; ?>
                                     </td>
                                     <td class="text-end">

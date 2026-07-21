@@ -261,6 +261,8 @@ echo json_encode([
         'expense_admin'        => $expenseAdmin,
         'expense_admin_fmt'    => fmtAmount($expenseAdmin),
         'expense_depr'         => $expenseDepr,
+        'expense_depr_fmt'     => fmtAmount($expenseDepr),
+        'expense_depr_per_month' => fmtAmount($deprPerMonth),
         'expense_vehicle'      => $expenseVehicle,
         'expense_fuel'         => $expenseFuel,
         'expense_maintenance'  => $expenseMaintenance,

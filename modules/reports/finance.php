@@ -239,6 +239,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
         <div class="col-md-3">
           <div class="text-muted small">Khấu hao tài sản</div>
           <div class="fw-bold" id="kpiDeprVal">—</div>
+          <div class="text-muted" style="font-size:11px" id="kpiDeprDetail">—</div>
         </div>
         <div class="col-md-3">
           <div class="text-muted small">Chi phí phương tiện</div>
@@ -393,12 +394,14 @@ function loadAll() {
       document.getElementById('kpiHeadcountVal').textContent    = (k.payroll_headcount ?? 0) + ' NV';
 
       if (document.getElementById('kpiAdminBaseVal')) {
+        const deprPerMonth = String(k.expense_depr_per_month ?? '').trim() || fmt(0);
         document.getElementById('kpiAdminBaseVal').textContent = fmt(k.expense_admin_base);
-        document.getElementById('kpiDeprVal').textContent = fmt(k.expense_depr);
+        document.getElementById('kpiDeprVal').textContent = k.expense_depr_fmt || fmt(k.expense_depr);
+        document.getElementById('kpiDeprDetail').textContent = 'Bình quân tháng: ' + deprPerMonth;
         document.getElementById('kpiVehicleVal').textContent = fmt(k.expense_vehicle);
         document.getElementById('kpiVehicleDetail').textContent =
           'Dầu: ' + fmt(k.expense_fuel) + ' | Bảo dưỡng: ' + fmt(k.expense_maintenance) + ' | Cầu đường: ' + fmt(k.expense_toll);
-        document.getElementById('kpiAdminTotalVal').textContent = fmt(k.expense_admin);
+        document.getElementById('kpiAdminTotalVal').textContent = k.expense_admin_fmt || fmt(k.expense_admin);
       }
 
       // KPI tồn kho
