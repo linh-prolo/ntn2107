@@ -25,15 +25,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         $note = trim($_POST['override_note'] ?? '');
 
         $ownerStmt = $pdo->prepare("
-            SELECT lr.*, u.id AS owner_id
+            SELECT lr.*, u.id AS owner_id, r.name AS owner_role
             FROM leave_requests lr
             JOIN users u ON lr.user_id = u.id
+            JOIN roles r ON u.role_id = r.id
             WHERE lr.id = ? AND lr.status IN ('approved', 'rejected')
         ");
         $ownerStmt->execute([$id]);
         $ownerRow = $ownerStmt->fetch();
+        $ownerForCheck = $ownerRow ? ['id' => $ownerRow['owner_id'], 'role' => $ownerRow['owner_role']] : null;
 
-        if ($ownerRow && in_array($newStatus, ['pending', 'rejected'], true)) {
+        if ($ownerRow && $ownerForCheck && canApprove($user, $ownerForCheck) && in_array($newStatus, ['pending', 'rejected'], true)) {
             try {
                 $pdo->beginTransaction();
                 if ($newStatus === 'pending') {
@@ -182,7 +184,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <div class="d-flex gap-1 align-items-center">
                                     <small class="text-muted me-1"><?= $r['approver_name'] ? htmlspecialchars($r['approver_name']) : '-' ?></small>
                                     <button class="btn btn-outline-warning btn-sm" style="font-size:11px;"
-                                            onclick='showOverrideLeave(<?= $r['id'] ?>, <?= json_encode($r["full_name"]) ?>)'>
+                                            onclick='showOverrideLeave(<?= $r['id'] ?>, <?= htmlspecialchars(json_encode($r["full_name"]), ENT_QUOTES, "UTF-8") ?>)'>
                                         ✏️ Override
                                     </button>
                                 </div>

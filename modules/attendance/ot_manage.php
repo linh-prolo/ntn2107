@@ -39,14 +39,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         $newStatus = $_POST['new_status'] ?? '';
         $note = trim($_POST['override_note'] ?? '');
         $ownerStmt = $pdo->prepare("
-            SELECT id, user_id, status, ot_date, start_time, end_time, hours
-            FROM overtime_requests
-            WHERE id = ? AND status IN ('approved', 'rejected')
+            SELECT ot.id, ot.user_id, ot.status, ot.ot_date, ot.start_time, ot.end_time, ot.hours, r.name AS owner_role
+            FROM overtime_requests ot
+            JOIN users u ON ot.user_id = u.id
+            JOIN roles r ON u.role_id = r.id
+            WHERE ot.id = ? AND ot.status IN ('approved', 'rejected')
         ");
         $ownerStmt->execute([$ot_id]);
         $ownerRow = $ownerStmt->fetch();
+        $ownerForCheck = $ownerRow ? ['id' => $ownerRow['user_id'], 'role' => $ownerRow['owner_role']] : null;
 
-        if ($ownerRow && in_array($newStatus, ['pending', 'rejected'], true)) {
+        if ($ownerRow && $ownerForCheck && canApprove($user, $ownerForCheck) && in_array($newStatus, ['pending', 'rejected'], true)) {
             try {
                 $pdo->beginTransaction();
                 if ($newStatus === 'pending') {
@@ -597,7 +600,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 </button>
                                 <?php if (hasRole('director') && in_array($ot['status'], ['approved', 'rejected'], true)): ?>
                                 <button type="button" class="btn btn-xs btn-outline-warning"
-                                        onclick='showOverrideOt(<?= $ot['id'] ?>, <?= json_encode($ot["full_name"]) ?>)'
+                                        onclick='showOverrideOt(<?= $ot['id'] ?>, <?= htmlspecialchars(json_encode($ot["full_name"]), ENT_QUOTES, "UTF-8") ?>)'
                                         title="Override">
                                     <i class="fas fa-edit"></i>
                                 </button>
@@ -655,7 +658,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <?php if (hasRole('director') && in_array($ot['status'], ['approved', 'rejected'], true)): ?>
                     <div class="mt-2">
                         <button type="button" class="btn btn-outline-warning btn-sm w-100"
-                                onclick='showOverrideOt(<?= $ot['id'] ?>, <?= json_encode($ot["full_name"]) ?>)'>
+                                onclick='showOverrideOt(<?= $ot['id'] ?>, <?= htmlspecialchars(json_encode($ot["full_name"]), ENT_QUOTES, "UTF-8") ?>)'>
                             ✏️ Override
                         </button>
                     </div>
