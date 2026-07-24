@@ -36,19 +36,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
         $days = (int)((strtotime($end) - strtotime($start)) / 86400) + 1;
-        $stmt = $pdo->prepare("INSERT INTO leave_requests (user_id, leave_type, start_date, end_date, total_days, reason) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$user['id'], $type, $start, $end, $days, $reason]);
-        $requestId = (int)$pdo->lastInsertId();
 
-        $managers = $pdo->query("SELECT id FROM users WHERE role_id IN (SELECT id FROM roles WHERE name IN ('production','manager','director')) AND is_active = 1")->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($managers as $mgr) {
-            $notifStmt = $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, ?, ?, 'leave_request', ?)");
-            $notifStmt->execute([$mgr['id'], 'Đơn xin nghỉ phép mới', $user['full_name'] . ' xin nghỉ từ ' . formatDate($start) . ' đến ' . formatDate($end), $requestId]);
+        // Kiểm tra hạn mức phép năm: tối đa 1 ngày/tháng
+        if ($type === 'annual' && empty($errors)) {
+            $checkMonth = date('Y-m', strtotime($start));
+            $quotaStmt = $pdo->prepare("
+                SELECT COALESCE(SUM(total_days), 0)
+                FROM leave_requests
+                WHERE user_id = ?
+                  AND leave_type = 'annual'
+                  AND status IN ('pending', 'approved')
+                  AND DATE_FORMAT(start_date, '%Y-%m') = ?
+            ");
+            $quotaStmt->execute([$user['id'], $checkMonth]);
+            $usedDays = (float)$quotaStmt->fetchColumn();
+
+            if ($usedDays >= 1) {
+                $errors[] = 'Bạn đã sử dụng hết 1 ngày phép năm trong tháng ' . date('m/Y', strtotime($start)) . '. Không thể đăng ký thêm.';
+            } elseif ($days > 1) {
+                $errors[] = 'Phép năm chỉ được tối đa 1 ngày mỗi tháng.';
+            }
         }
 
-        setFlash('success', 'Đã gửi đơn xin nghỉ phép thành công!');
-        header('Location: /erp/mobile/leave.php');
-        exit();
+        if (empty($errors)) {
+            $stmt = $pdo->prepare("INSERT INTO leave_requests (user_id, leave_type, start_date, end_date, total_days, reason) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$user['id'], $type, $start, $end, $days, $reason]);
+            $requestId = (int)$pdo->lastInsertId();
+
+            $managers = $pdo->query("SELECT id FROM users WHERE role_id IN (SELECT id FROM roles WHERE name IN ('production','manager','director')) AND is_active = 1")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($managers as $mgr) {
+                $notifStmt = $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, ?, ?, 'leave_request', ?)");
+                $notifStmt->execute([$mgr['id'], 'Đơn xin nghỉ phép mới', $user['full_name'] . ' xin nghỉ từ ' . formatDate($start) . ' đến ' . formatDate($end), $requestId]);
+            }
+
+            setFlash('success', 'Đã gửi đơn xin nghỉ phép thành công!');
+            header('Location: /erp/mobile/leave.php');
+            exit();
+        }
     }
 }
 
