@@ -28,9 +28,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         $ownerRow = $ownerStmt->fetch();
 
         if ($ownerRow && in_array($newStatus, ['pending', 'rejected'], true)) {
-            $rejectReason = $newStatus === 'rejected' ? $note : null;
-            $pdo->prepare("UPDATE leave_requests SET status = ?, approved_by = ?, approved_at = NOW(), reject_reason = ? WHERE id = ?")
-                ->execute([$newStatus, $user['id'], $rejectReason, $id]);
+            if ($newStatus === 'pending') {
+                $pdo->prepare("UPDATE leave_requests SET status = 'pending', approved_by = NULL, approved_at = NULL, reject_reason = NULL WHERE id = ?")
+                    ->execute([$id]);
+            } else {
+                $pdo->prepare("UPDATE leave_requests SET status = 'rejected', approved_by = ?, approved_at = NOW(), reject_reason = ? WHERE id = ?")
+                    ->execute([$user['id'], $note, $id]);
+            }
 
             $statusLabel = $newStatus === 'pending' ? 'thu hồi về chờ duyệt' : 'từ chối';
             $msg = "⚠️ Đơn nghỉ phép của bạn đã bị giám đốc {$statusLabel}" . ($note ? ": $note" : '.');
@@ -163,7 +167,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <div class="d-flex gap-1 align-items-center">
                                     <small class="text-muted me-1"><?= $r['approver_name'] ? htmlspecialchars($r['approver_name']) : '-' ?></small>
                                     <button class="btn btn-outline-warning btn-sm" style="font-size:11px;"
-                                            onclick="showOverrideLeave(<?= $r['id'] ?>, '<?= htmlspecialchars(addslashes($r['full_name'])) ?>')">
+                                            onclick='showOverrideLeave(<?= $r['id'] ?>, <?= json_encode($r["full_name"]) ?>)'>
                                         ✏️ Override
                                     </button>
                                 </div>

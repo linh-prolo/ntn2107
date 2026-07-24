@@ -47,9 +47,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         $ownerRow = $ownerStmt->fetch();
 
         if ($ownerRow && in_array($newStatus, ['pending', 'rejected'], true)) {
-            $rejectReason = $newStatus === 'rejected' ? $note : null;
-            $pdo->prepare("UPDATE overtime_requests SET status = ?, approved_by = ?, approved_at = NOW(), reject_reason = ? WHERE id = ?")
-                ->execute([$newStatus, $user['id'], $rejectReason, $ot_id]);
+            if ($newStatus === 'pending') {
+                $pdo->prepare("UPDATE overtime_requests SET status = 'pending', approved_by = NULL, approved_at = NULL, reject_reason = NULL WHERE id = ?")
+                    ->execute([$ot_id]);
+            } else {
+                $pdo->prepare("UPDATE overtime_requests SET status = 'rejected', approved_by = ?, approved_at = NOW(), reject_reason = ? WHERE id = ?")
+                    ->execute([$user['id'], $note, $ot_id]);
+            }
 
             $statusLabel = $newStatus === 'pending' ? 'thu hồi về chờ duyệt' : 'từ chối';
             $msg = "⚠️ Đơn OT ngày " . formatDate($ownerRow['ot_date']) .
@@ -584,7 +588,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 </button>
                                 <?php if (hasRole('director') && in_array($ot['status'], ['approved', 'rejected'], true)): ?>
                                 <button type="button" class="btn btn-xs btn-outline-warning"
-                                        onclick="showOverrideOt(<?= $ot['id'] ?>, '<?= htmlspecialchars(addslashes($ot['full_name'])) ?>')"
+                                        onclick='showOverrideOt(<?= $ot['id'] ?>, <?= json_encode($ot["full_name"]) ?>)'
                                         title="Override">
                                     <i class="fas fa-edit"></i>
                                 </button>
@@ -642,7 +646,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <?php if (hasRole('director') && in_array($ot['status'], ['approved', 'rejected'], true)): ?>
                     <div class="mt-2">
                         <button type="button" class="btn btn-outline-warning btn-sm w-100"
-                                onclick="showOverrideOt(<?= $ot['id'] ?>, '<?= htmlspecialchars(addslashes($ot['full_name'])) ?>')">
+                                onclick='showOverrideOt(<?= $ot['id'] ?>, <?= json_encode($ot["full_name"]) ?>)'>
                             ✏️ Override
                         </button>
                     </div>
