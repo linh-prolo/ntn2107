@@ -47,22 +47,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         $ownerRow = $ownerStmt->fetch();
 
         if ($ownerRow && in_array($newStatus, ['pending', 'rejected'], true)) {
-            if ($newStatus === 'pending') {
-                $pdo->prepare("UPDATE overtime_requests SET status = 'pending', approved_by = NULL, approved_at = NULL, reject_reason = NULL WHERE id = ?")
-                    ->execute([$ot_id]);
-            } else {
-                $pdo->prepare("UPDATE overtime_requests SET status = 'rejected', approved_by = ?, approved_at = NOW(), reject_reason = ? WHERE id = ?")
-                    ->execute([$user['id'], $note, $ot_id]);
+            try {
+                $pdo->beginTransaction();
+                if ($newStatus === 'pending') {
+                    $pdo->prepare("UPDATE overtime_requests SET status = 'pending', approved_by = NULL, approved_at = NULL, reject_reason = NULL WHERE id = ?")
+                        ->execute([$ot_id]);
+                } else {
+                    $pdo->prepare("UPDATE overtime_requests SET status = 'rejected', approved_by = ?, approved_at = NOW(), reject_reason = ? WHERE id = ?")
+                        ->execute([$user['id'], $note, $ot_id]);
+                }
+
+                $statusLabel = $newStatus === 'pending' ? 'thu hồi về chờ duyệt' : 'từ chối';
+                $msg = "⚠️ Đơn OT ngày " . formatDate($ownerRow['ot_date']) .
+                       " ({$ownerRow['start_time']}–{$ownerRow['end_time']}, {$ownerRow['hours']} giờ) đã bị giám đốc {$statusLabel}" .
+                       ($note ? ": $note" : '.');
+                $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, 'Giám đốc đã cập nhật đơn OT', ?, 'ot_request', ?)")
+                    ->execute([$ownerRow['user_id'], $msg, $ot_id]);
+                $pdo->commit();
+
+                setFlash('success', '✅ Đã cập nhật trạng thái đơn OT.');
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                setFlash('danger', '❌ Không thể cập nhật đơn OT.');
             }
-
-            $statusLabel = $newStatus === 'pending' ? 'thu hồi về chờ duyệt' : 'từ chối';
-            $msg = "⚠️ Đơn OT ngày " . formatDate($ownerRow['ot_date']) .
-                   " ({$ownerRow['start_time']}–{$ownerRow['end_time']}, {$ownerRow['hours']} giờ) đã bị giám đốc {$statusLabel}" .
-                   ($note ? ": $note" : '.');
-            $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, 'Giám đốc đã cập nhật đơn OT', ?, 'ot_request', ?)")
-                ->execute([$ownerRow['user_id'], $msg, $ot_id]);
-
-            setFlash('success', '✅ Đã cập nhật trạng thái đơn OT.');
         } else {
             setFlash('danger', '❌ Không thể thực hiện thao tác này.');
         }

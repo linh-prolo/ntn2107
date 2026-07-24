@@ -34,20 +34,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         $ownerRow = $ownerStmt->fetch();
 
         if ($ownerRow && in_array($newStatus, ['pending', 'rejected'], true)) {
-            if ($newStatus === 'pending') {
-                $pdo->prepare("UPDATE leave_requests SET status = 'pending', approved_by = NULL, approved_at = NULL, reject_reason = NULL WHERE id = ?")
-                    ->execute([$id]);
-            } else {
-                $pdo->prepare("UPDATE leave_requests SET status = 'rejected', approved_by = ?, approved_at = NOW(), reject_reason = ? WHERE id = ?")
-                    ->execute([$user['id'], $note, $id]);
+            try {
+                $pdo->beginTransaction();
+                if ($newStatus === 'pending') {
+                    $pdo->prepare("UPDATE leave_requests SET status = 'pending', approved_by = NULL, approved_at = NULL, reject_reason = NULL WHERE id = ?")
+                        ->execute([$id]);
+                } else {
+                    $pdo->prepare("UPDATE leave_requests SET status = 'rejected', approved_by = ?, approved_at = NOW(), reject_reason = ? WHERE id = ?")
+                        ->execute([$user['id'], $note, $id]);
+                }
+
+                $statusLabel = $newStatus === 'pending' ? 'thu hồi về chờ duyệt' : 'từ chối';
+                $msg = "⚠️ Đơn nghỉ phép của bạn đã bị giám đốc {$statusLabel}" . ($note ? ": $note" : '.');
+                $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, 'Giám đốc đã cập nhật đơn nghỉ phép', ?, 'leave_request', ?)")
+                    ->execute([$ownerRow['owner_id'], $msg, $id]);
+                $pdo->commit();
+
+                setFlash('success', '✅ Đã cập nhật trạng thái đơn nghỉ phép.');
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                setFlash('danger', '❌ Không thể cập nhật đơn nghỉ phép.');
             }
-
-            $statusLabel = $newStatus === 'pending' ? 'thu hồi về chờ duyệt' : 'từ chối';
-            $msg = "⚠️ Đơn nghỉ phép của bạn đã bị giám đốc {$statusLabel}" . ($note ? ": $note" : '.');
-            $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, 'Giám đốc đã cập nhật đơn nghỉ phép', ?, 'leave_request', ?)")
-                ->execute([$ownerRow['owner_id'], $msg, $id]);
-
-            setFlash('success', '✅ Đã cập nhật trạng thái đơn nghỉ phép.');
         } else {
             setFlash('danger', '❌ Không thể thực hiện thao tác này.');
         }
