@@ -262,6 +262,7 @@ function showRejectForm(id) {
 function showOverrideLeave(id, empName) {
     document.getElementById('overrideLeaveId').value = id;
     document.getElementById('overrideLeaveEmp').textContent = empName;
+    document.querySelector('#overrideLeaveModal textarea').value = '';
     new bootstrap.Modal(document.getElementById('overrideLeaveModal')).show();
 }
 </script>
