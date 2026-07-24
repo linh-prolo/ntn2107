@@ -10,8 +10,61 @@ $pdo = getDBConnection();
 // Xử lý duyệt/từ chối
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? '')) {
     $id = (int)$_POST['request_id'];
-    $action = $_POST['action']; // approved / rejected
+    $action = $_POST['action'] ?? ''; // approved / rejected
     $reason = trim($_POST['reject_reason'] ?? '');
+
+    // ── Giám đốc override đơn đã duyệt/từ chối ──
+    if ($action === 'director_override') {
+        if (!hasRole('director')) {
+            setFlash('danger', '⛔ Bạn không có quyền thực hiện thao tác này.');
+            header('Location: /erp/modules/attendance/leave_manage.php?filter=' . ($_GET['filter'] ?? 'approved'));
+            exit();
+        }
+
+        $newStatus = $_POST['new_status'] ?? '';
+        $note = trim($_POST['override_note'] ?? '');
+
+        $ownerStmt = $pdo->prepare("
+            SELECT lr.*, u.id AS owner_id, r.name AS owner_role
+            FROM leave_requests lr
+            JOIN users u ON lr.user_id = u.id
+            JOIN roles r ON u.role_id = r.id
+            WHERE lr.id = ? AND lr.status IN ('approved', 'rejected')
+        ");
+        $ownerStmt->execute([$id]);
+        $ownerRow = $ownerStmt->fetch();
+        $ownerForCheck = $ownerRow ? ['id' => $ownerRow['owner_id'], 'role' => $ownerRow['owner_role']] : null;
+
+        if ($ownerRow && $ownerForCheck && canApprove($user, $ownerForCheck) && in_array($newStatus, ['pending', 'rejected'], true)) {
+            try {
+                $pdo->beginTransaction();
+                if ($newStatus === 'pending') {
+                    $pdo->prepare("UPDATE leave_requests SET status = 'pending', approved_by = NULL, approved_at = NULL, reject_reason = NULL WHERE id = ?")
+                        ->execute([$id]);
+                } else {
+                    $pdo->prepare("UPDATE leave_requests SET status = 'rejected', approved_by = ?, approved_at = NOW(), reject_reason = ? WHERE id = ?")
+                        ->execute([$user['id'], $note, $id]);
+                }
+
+                $statusLabel = $newStatus === 'pending' ? 'thu hồi về chờ duyệt' : 'từ chối';
+                $msg = "⚠️ Đơn nghỉ phép của bạn đã bị giám đốc {$statusLabel}" . ($note ? ": $note" : '.');
+                $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, 'Giám đốc đã cập nhật đơn nghỉ phép', ?, 'leave_request', ?)")
+                    ->execute([$ownerRow['owner_id'], $msg, $id]);
+                $pdo->commit();
+
+                setFlash('success', '✅ Đã cập nhật trạng thái đơn nghỉ phép.');
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                setFlash('danger', '❌ Không thể cập nhật đơn nghỉ phép.');
+            }
+        } else {
+            setFlash('danger', '❌ Không thể thực hiện thao tác này.');
+        }
+        header('Location: /erp/modules/attendance/leave_manage.php?filter=' . ($_GET['filter'] ?? 'approved'));
+        exit();
+    }
 
     // ── Kiểm tra quyền đa cấp: chỉ được duyệt cấp dưới, không tự duyệt ──
     $ownerStmt = $pdo->prepare("
@@ -127,7 +180,17 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <button class="btn btn-danger btn-sm" onclick="showRejectForm(<?= $r['id'] ?>)">❌</button>
                             </div>
                         <?php else: ?>
-                            <small class="text-muted"><?= $r['approver_name'] ? htmlspecialchars($r['approver_name']) : '-' ?></small>
+                            <?php if (hasRole('director') && in_array($r['status'], ['approved', 'rejected'])): ?>
+                                <div class="d-flex gap-1 align-items-center">
+                                    <small class="text-muted me-1"><?= $r['approver_name'] ? htmlspecialchars($r['approver_name']) : '-' ?></small>
+                                    <button class="btn btn-outline-warning btn-sm" style="font-size:11px;"
+                                            onclick='showOverrideLeave(<?= $r['id'] ?>, <?= htmlspecialchars(json_encode($r["full_name"]), ENT_QUOTES, "UTF-8") ?>)'>
+                                        ✏️ Override
+                                    </button>
+                                </div>
+                            <?php else: ?>
+                                <small class="text-muted"><?= $r['approver_name'] ? htmlspecialchars($r['approver_name']) : '-' ?></small>
+                            <?php endif; ?>
                         <?php endif; ?>
                         </td>
                     </tr>
@@ -167,10 +230,51 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
         </div>
     </div>
 </div>
+
+<!-- Modal Override (Giám đốc) -->
+<div class="modal fade" id="overrideLeaveModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+                <input type="hidden" name="request_id" id="overrideLeaveId">
+                <input type="hidden" name="action" value="director_override">
+                <div class="modal-header bg-warning bg-opacity-10">
+                    <h6 class="modal-title fw-bold">✏️ Giám đốc Override — <span id="overrideLeaveEmp"></span></h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Đổi trạng thái thành</label>
+                        <select name="new_status" class="form-select" required>
+                            <option value="pending">⌛ Thu hồi về Chờ duyệt</option>
+                            <option value="rejected">❌ Từ chối</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Ghi chú lý do</label>
+                        <textarea name="override_note" class="form-control" rows="3" placeholder="Nhập lý do override..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-warning fw-bold">Xác nhận Override</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 <script>
 function showRejectForm(id) {
     document.getElementById('rejectId').value = id;
     new bootstrap.Modal(document.getElementById('rejectModal')).show();
+}
+
+function showOverrideLeave(id, empName) {
+    document.getElementById('overrideLeaveId').value = id;
+    document.getElementById('overrideLeaveEmp').textContent = empName;
+    document.querySelector('#overrideLeaveModal textarea').value = '';
+    new bootstrap.Modal(document.getElementById('overrideLeaveModal')).show();
 }
 </script>
 <?php include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/footer.php'; ?>
