@@ -16,6 +16,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     // Tính số ngày
     $days = (strtotime($end) - strtotime($start)) / 86400 + 1;
 
+    // Kiểm tra hạn mức phép năm: tối đa 1 ngày/tháng
+    if ($type === 'annual') {
+        $checkMonth = date('Y-m', strtotime($start));
+        $quotaStmt = $pdo->prepare("
+            SELECT COALESCE(SUM(total_days), 0)
+            FROM leave_requests
+            WHERE user_id = ?
+              AND leave_type = 'annual'
+              AND status IN ('pending', 'approved')
+              AND DATE_FORMAT(start_date, '%Y-%m') = ?
+        ");
+        $quotaStmt->execute([$user['id'], $checkMonth]);
+        $usedDays = (float)$quotaStmt->fetchColumn();
+
+        if ($usedDays >= 1) {
+            setFlash('danger', '❌ Bạn đã sử dụng hết 1 ngày phép năm trong tháng ' . date('m/Y', strtotime($start)) . '. Không thể đăng ký thêm.');
+            header('Location: /erp/modules/attendance/leave_request.php');
+            exit();
+        }
+
+        // Đơn mới không được vượt quá 1 ngày
+        if ($days > 1) {
+            setFlash('danger', '❌ Phép năm chỉ được tối đa 1 ngày mỗi tháng.');
+            header('Location: /erp/modules/attendance/leave_request.php');
+            exit();
+        }
+    }
+
     $stmt = $pdo->prepare("INSERT INTO leave_requests (user_id, leave_type, start_date, end_date, total_days, reason) VALUES (?, ?, ?, ?, ?, ?)");
     $stmt->execute([$user['id'], $type, $start, $end, $days, $reason]);
 
