@@ -14,7 +14,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     $reason = trim($_POST['reject_reason'] ?? '');
 
     // ── Giám đốc override đơn đã duyệt/từ chối ──
-    if ($action === 'director_override' && hasRole('director')) {
+    if ($action === 'director_override') {
+        if (!hasRole('director')) {
+            setFlash('danger', '⛔ Bạn không có quyền thực hiện thao tác này.');
+            header('Location: /erp/modules/attendance/leave_manage.php?filter=' . ($_GET['filter'] ?? 'approved'));
+            exit();
+        }
+
         $newStatus = $_POST['new_status'] ?? '';
         $note = trim($_POST['override_note'] ?? '');
 
@@ -22,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
             SELECT lr.*, u.id AS owner_id
             FROM leave_requests lr
             JOIN users u ON lr.user_id = u.id
-            WHERE lr.id = ?
+            WHERE lr.id = ? AND lr.status IN ('approved', 'rejected')
         ");
         $ownerStmt->execute([$id]);
         $ownerRow = $ownerStmt->fetch();
