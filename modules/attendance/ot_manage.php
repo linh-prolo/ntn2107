@@ -28,6 +28,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     $ot_id         = (int)($_POST['ot_id'] ?? 0);
     $reject_reason = trim($_POST['reject_reason'] ?? '');
 
+    // ── Giám đốc override đơn OT đã duyệt/từ chối ──
+    if ($action === 'director_override_ot') {
+        if (!hasRole('director')) {
+            setFlash('danger', '⛔ Bạn không có quyền thực hiện thao tác này.');
+            header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+            exit();
+        }
+
+        $newStatus = $_POST['new_status'] ?? '';
+        $note = trim($_POST['override_note'] ?? '');
+        $ownerStmt = $pdo->prepare("
+            SELECT id, user_id, status, ot_date, start_time, end_time, hours
+            FROM overtime_requests
+            WHERE id = ? AND status IN ('approved', 'rejected')
+        ");
+        $ownerStmt->execute([$ot_id]);
+        $ownerRow = $ownerStmt->fetch();
+
+        if ($ownerRow && in_array($newStatus, ['pending', 'rejected'], true)) {
+            $rejectReason = $newStatus === 'rejected' ? $note : null;
+            $pdo->prepare("UPDATE overtime_requests SET status = ?, approved_by = ?, approved_at = NOW(), reject_reason = ? WHERE id = ?")
+                ->execute([$newStatus, $user['id'], $rejectReason, $ot_id]);
+
+            $statusLabel = $newStatus === 'pending' ? 'thu hồi về chờ duyệt' : 'từ chối';
+            $msg = "⚠️ Đơn OT ngày " . formatDate($ownerRow['ot_date']) .
+                   " ({$ownerRow['start_time']}–{$ownerRow['end_time']}, {$ownerRow['hours']} giờ) đã bị giám đốc {$statusLabel}" .
+                   ($note ? ": $note" : '.');
+            $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, 'Giám đốc đã cập nhật đơn OT', ?, 'ot_request', ?)")
+                ->execute([$ownerRow['user_id'], $msg, $ot_id]);
+
+            setFlash('success', '✅ Đã cập nhật trạng thái đơn OT.');
+        } else {
+            setFlash('danger', '❌ Không thể thực hiện thao tác này.');
+        }
+
+        header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+        exit();
+    }
+
     // ── Duyệt 1 đơn ──
     if ($action === 'approve') {
         $owner = getOtOwner($pdo, $ot_id);
@@ -543,6 +582,13 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                         title="Chi tiết">
                                     <i class="fas fa-eye"></i>
                                 </button>
+                                <?php if (hasRole('director') && in_array($ot['status'], ['approved', 'rejected'], true)): ?>
+                                <button type="button" class="btn btn-xs btn-outline-warning"
+                                        onclick="showOverrideOt(<?= $ot['id'] ?>, '<?= htmlspecialchars(addslashes($ot['full_name'])) ?>')"
+                                        title="Override">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <?php endif; ?>
                                 <?php if ($user['role'] === 'director' && $ot['status'] === 'approved'): ?>
                                 <button type="button" class="btn btn-xs btn-outline-danger"
                                         onclick="deleteOt(<?= $ot['id'] ?>, '<?= htmlspecialchars(addslashes($ot['full_name'])) ?>')"
@@ -590,6 +636,14 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <button type="button" class="btn btn-danger btn-sm flex-grow-1"
                                 onclick="showRejectModal(<?= $ot['id'] ?>, '<?= htmlspecialchars(addslashes($ot['full_name'])) ?>')">
                             ❌ Từ chối
+                        </button>
+                    </div>
+                    <?php endif; ?>
+                    <?php if (hasRole('director') && in_array($ot['status'], ['approved', 'rejected'], true)): ?>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-outline-warning btn-sm w-100"
+                                onclick="showOverrideOt(<?= $ot['id'] ?>, '<?= htmlspecialchars(addslashes($ot['full_name'])) ?>')">
+                            ✏️ Override
                         </button>
                     </div>
                     <?php endif; ?>
@@ -661,6 +715,40 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
     </div>
 </div>
 
+<!-- Modal Override OT (Giám đốc) -->
+<div class="modal fade" id="overrideOtModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+                <input type="hidden" name="action" value="director_override_ot">
+                <input type="hidden" name="ot_id" id="overrideOtId">
+                <div class="modal-header bg-warning bg-opacity-10 border-0">
+                    <h6 class="modal-title fw-bold">✏️ Giám đốc Override OT — <span id="overrideOtEmp"></span></h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Đổi trạng thái thành</label>
+                        <select name="new_status" class="form-select" required>
+                            <option value="pending">⌛ Thu hồi về Chờ duyệt</option>
+                            <option value="rejected">❌ Từ chối</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Ghi chú lý do</label>
+                        <textarea name="override_note" class="form-control" rows="3" placeholder="Nhập lý do override..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Huỷ</button>
+                    <button type="submit" class="btn btn-warning fw-bold">Xác nhận Override</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Modal Chi tiết -->
 <div class="modal fade" id="detailModal" tabindex="-1">
     <div class="modal-dialog">
@@ -692,6 +780,13 @@ function showRejectModal(id, name) {
     document.getElementById('rejectEmpName').textContent = name;
     document.querySelector('#rejectForm textarea').value = '';
     new bootstrap.Modal(document.getElementById('rejectModal')).show();
+}
+
+function showOverrideOt(id, name) {
+    document.getElementById('overrideOtId').value = id;
+    document.getElementById('overrideOtEmp').textContent = name;
+    document.querySelector('#overrideOtModal textarea').value = '';
+    new bootstrap.Modal(document.getElementById('overrideOtModal')).show();
 }
 
 function getCheckedIds() {
