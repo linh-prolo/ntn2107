@@ -148,6 +148,26 @@ try {
         $stmtL->execute([$userId, $workDate]);
         $existing = $stmtL->fetch(PDO::FETCH_ASSOC);
 
+        // ── Xử lý ca đêm: nếu ngày hiện tại chưa có bản ghi (hoặc chưa có check_in),
+        // kiểm tra ngày hôm trước có đang mở (check_in nhưng chưa check_out) không.
+        if ((!$existing || empty($existing['check_in'])) && (int)date('H', $timeTs) < 12) {
+            $prevDate = date('Y-m-d', strtotime($workDate . ' -1 day'));
+            $stmtPrev = $pdo->prepare(
+                "SELECT id, check_in, check_out FROM attendance_logs
+                 WHERE user_id = ? AND work_date = ?
+                   AND check_in IS NOT NULL AND check_out IS NULL
+                 LIMIT 1"
+            );
+            $stmtPrev->execute([$userId, $prevDate]);
+            $prevLog = $stmtPrev->fetch(PDO::FETCH_ASSOC);
+
+            if ($prevLog) {
+                $workDate = $prevDate;
+                $existing = $prevLog;
+                zkLog("NIGHT_SHIFT_CHECKOUT | user=$userId | reassigned to workDate=$workDate");
+            }
+        }
+
         if ($status === 0) {
             // ── CHECK-IN ────────────────────────────────────────────────────
             // Tính is_late / late_minutes từ ca làm việc
