@@ -7,11 +7,26 @@ requireRole('director', 'accountant', 'warehouse', 'production', 'manager');
 $pdo = getDBConnection();
 
 $customerId = (int)($_GET['customer_id'] ?? 0);
+$iqcReceiptId = (int)($_GET['iqc_receipt_id'] ?? 0);
 $customers = fetchAllSafe($pdo, 'SELECT id, customer_name FROM customers WHERE is_active = 1 ORDER BY customer_name');
+
+$iqcReceipts = [];
+if ($customerId > 0) {
+    $iqcReceipts = fetchAllSafe($pdo, "SELECT ir.id, ir.receipt_no, ir.received_date
+        FROM iqc_receipts ir
+        WHERE ir.customer_id = ?
+        ORDER BY ir.id DESC", [$customerId]);
+}
 
 $items = [];
 if ($customerId > 0) {
-    $items = fetchAllSafe($pdo, "SELECT pi.id, po.order_no, pc.product_code, pc.description,
+    $itemsWhere = "ir.customer_id = ? AND (pi.qty_done > 0 OR pi.qty_error > 0)";
+    $itemsParams = [$customerId];
+    if ($iqcReceiptId > 0) {
+        $itemsWhere .= " AND ir.id = ?";
+        $itemsParams[] = $iqcReceiptId;
+    }
+    $items = fetchAllSafe($pdo, "SELECT pi.id, po.order_no, ir.receipt_no AS iqc_receipt_no, pc.product_code, pc.description,
                                pi.qty_done, pi.qty_error,
                                COALESCE(SUM(CASE WHEN di.type = 'done' THEN di.qty_deliver ELSE 0 END), 0) AS delivered_done,
                                COALESCE(SUM(CASE WHEN di.type = 'error' THEN di.qty_deliver ELSE 0 END), 0) AS delivered_error
@@ -21,9 +36,9 @@ if ($customerId > 0) {
                                JOIN iqc_receipts ir ON ir.id = po.iqc_receipt_id
                                JOIN product_codes pc ON pc.id = iri.product_code_id
                                LEFT JOIN oqc_delivery_items di ON di.production_item_id = pi.id
-                               WHERE ir.customer_id = ? AND (pi.qty_done > 0 OR pi.qty_error > 0)
+                               WHERE $itemsWhere
                                GROUP BY pi.id
-                               ORDER BY pi.id DESC", [$customerId]);
+                               ORDER BY pi.id DESC", $itemsParams);
 }
 
 $csrf = generateCSRF();
@@ -37,7 +52,18 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
         <form id="formDelivery">
             <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
             <div class="row g-3">
-                <div class="col-md-4"><label class="form-label">Khách hàng</label><select name="customer_id" id="customerId" class="form-select" required><option value="">-- Chọn --</option><?php foreach($customers as $c): ?><option value="<?= (int)$c['id'] ?>" <?= $customerId===(int)$c['id']?'selected':'' ?>><?= e($c['customer_name']) ?></option><?php endforeach; ?></select></div>
+                <div class="col-md-3"><label class="form-label">Khách hàng</label><select name="customer_id" id="customerId" class="form-select" required><option value="">-- Chọn --</option><?php foreach($customers as $c): ?><option value="<?= (int)$c['id'] ?>" <?= $customerId===(int)$c['id']?'selected':'' ?>><?= e($c['customer_name']) ?></option><?php endforeach; ?></select></div>
+                <div class="col-md-3">
+                    <label class="form-label">Lọc theo phiếu IQC</label>
+                    <select name="iqc_receipt_id" id="iqcReceiptId" class="form-select" <?= $customerId === 0 ? 'disabled' : '' ?>>
+                        <option value="0">-- Tất cả phiếu IQC --</option>
+                        <?php foreach ($iqcReceipts as $ir): ?>
+                        <option value="<?= (int)$ir['id'] ?>" <?= $iqcReceiptId === (int)$ir['id'] ? 'selected' : '' ?>>
+                            <?= e($ir['receipt_no']) ?> (<?= e(formatDate($ir['received_date'])) ?>)
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
                 <div class="col-md-2"><label class="form-label">Ngày giao</label><input type="date" class="form-control" name="delivery_date" value="<?= e(date('Y-m-d')) ?>" required></div>
                 <div class="col-md-2"><label class="form-label">Người nhận hàng</label><input type="text" class="form-control" name="sender_name"></div>
                 <div class="col-md-2"><label class="form-label">Phương tiện</label><input type="text" class="form-control" name="vehicle_plate"></div>
@@ -48,9 +74,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
             <h6>Danh sách hàng có thể giao</h6>
             <div class="table-responsive">
                 <table class="table table-sm align-middle">
-                    <thead class="table-dark"><tr><th><input type="checkbox" id="checkAll" class="form-check-input" title="Tích tất cả"></th><th>Lệnh SX</th><th>Mã hàng</th><th>Tên hàng</th><th>Loại</th><th class="text-end">SL tối đa</th><th class="text-end">SL giao</th></tr></thead>
+                    <thead class="table-dark"><tr><th><input type="checkbox" id="checkAll" class="form-check-input" title="Tích tất cả"></th><th>Lệnh SX</th><th>Số IQC</th><th>Mã hàng</th><th>Tên hàng</th><th>Loại</th><th class="text-end">SL tối đa</th><th class="text-end">SL giao</th></tr></thead>
                     <tbody>
-                    <?php if(!$items): ?><tr><td colspan="7" class="text-center text-muted py-4">Vui lòng chọn khách hàng để tải dữ liệu</td></tr><?php endif; ?>
+                    <?php if(!$items): ?><tr><td colspan="8" class="text-center text-muted py-4">Vui lòng chọn khách hàng để tải dữ liệu</td></tr><?php endif; ?>
                     <?php
                     // Each product may yield up to 2 rows (done + error); $rowIdx tracks the
                     // absolute row index so every items[N][...] group maps correctly in PHP.
@@ -64,6 +90,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <tr>
                         <td><input class="form-check-input pick-row" type="checkbox"></td>
                         <td><?= e($it['order_no']) ?></td>
+                        <td><?= e($it['iqc_receipt_no']) ?></td>
                         <td><?= e($it['product_code']) ?></td>
                         <td><?= e($it['description']) ?></td>
                         <td><span class="badge bg-success">Thành phẩm</span></td>
@@ -79,6 +106,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <tr class="table-danger bg-opacity-25">
                         <td><input class="form-check-input pick-row" type="checkbox"></td>
                         <td><?= e($it['order_no']) ?></td>
+                        <td><?= e($it['iqc_receipt_no']) ?></td>
                         <td><?= e($it['product_code']) ?></td>
                         <td><?= e($it['description']) ?></td>
                         <td><span class="badge bg-danger">Lỗi-Trả lại</span></td>
@@ -102,6 +130,12 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 <script>
 document.getElementById('customerId').addEventListener('change', function(){
   location.href = '/erp/modules/warehouse/oqc_delivery.php?customer_id='+this.value;
+});
+
+document.getElementById('iqcReceiptId').addEventListener('change', function(){
+  const customerId = document.getElementById('customerId').value;
+  if (!customerId) return;
+  location.href = '/erp/modules/warehouse/oqc_delivery.php?customer_id=' + customerId + '&iqc_receipt_id=' + this.value;
 });
 
 document.querySelectorAll('.pick-row').forEach(chk=>chk.addEventListener('change', function(){
