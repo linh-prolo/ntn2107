@@ -53,45 +53,51 @@ $summaryStmt = $pdo->prepare("
     SELECT pc.product_code,
            pc.description,
            iri.unit,
-           COALESCE(
-               (
-                   SELECT cp.unit_price
-                   FROM customer_prices cp
-                   WHERE cp.customer_id = ?
-                     AND cp.product_code_id = iri.product_code_id
-                     AND cp.effective_date <= d.delivery_date
-                     AND (cp.expired_date IS NULL OR cp.expired_date >= d.delivery_date)
-                     AND cp.is_active = 1
-                   ORDER BY cp.effective_date DESC, cp.id DESC
-                   LIMIT 1
-               ),
-               0
-           ) AS unit_price,
+           ir.is_rework,
+           CASE WHEN ir.is_rework = 1 THEN 0
+                ELSE COALESCE(
+                    (
+                        SELECT cp.unit_price
+                        FROM customer_prices cp
+                        WHERE cp.customer_id = ?
+                          AND cp.product_code_id = iri.product_code_id
+                          AND cp.effective_date <= d.delivery_date
+                          AND (cp.expired_date IS NULL OR cp.expired_date >= d.delivery_date)
+                          AND cp.is_active = 1
+                        ORDER BY cp.effective_date DESC, cp.id DESC
+                        LIMIT 1
+                    ),
+                    0
+                )
+           END AS unit_price,
            SUM(di.qty_deliver) AS total_qty,
-           SUM(di.qty_deliver * COALESCE(
-               (
-                   SELECT cp.unit_price
-                   FROM customer_prices cp
-                   WHERE cp.customer_id = ?
-                     AND cp.product_code_id = iri.product_code_id
-                     AND cp.effective_date <= d.delivery_date
-                     AND (cp.expired_date IS NULL OR cp.expired_date >= d.delivery_date)
-                     AND cp.is_active = 1
-                   ORDER BY cp.effective_date DESC, cp.id DESC
-                   LIMIT 1
-               ),
-               0
-           )) AS total_amount
+           SUM(CASE WHEN ir.is_rework = 1 THEN 0
+                    ELSE di.qty_deliver * COALESCE(
+                        (
+                            SELECT cp.unit_price
+                            FROM customer_prices cp
+                            WHERE cp.customer_id = ?
+                              AND cp.product_code_id = iri.product_code_id
+                              AND cp.effective_date <= d.delivery_date
+                              AND (cp.expired_date IS NULL OR cp.expired_date >= d.delivery_date)
+                              AND cp.is_active = 1
+                            ORDER BY cp.effective_date DESC, cp.id DESC
+                            LIMIT 1
+                        ),
+                        0
+                    )
+               END) AS total_amount
     FROM oqc_delivery_items di
     JOIN oqc_deliveries d ON d.id = di.delivery_id
     JOIN production_items pi ON di.production_item_id = pi.id
     JOIN iqc_receipt_items iri ON pi.iqc_item_id = iri.id
+    JOIN iqc_receipts ir ON ir.id = iri.receipt_id
     JOIN product_codes pc ON pc.id = iri.product_code_id
     WHERE d.customer_id = ?
       AND d.delivery_date BETWEEN ? AND ?
       AND d.status <> 'invoiced'
       AND di.type = 'done'
-    GROUP BY iri.product_code_id, pc.product_code, pc.description, iri.unit, unit_price
+    GROUP BY iri.product_code_id, pc.product_code, pc.description, iri.unit, ir.is_rework, unit_price
     ORDER BY pc.product_code, unit_price
 ");
 $summaryStmt->execute([$customerId, $customerId, $customerId, $fromDate, $toDate]);
@@ -105,20 +111,23 @@ $detailStmt = $pdo->prepare("
            pc.description,
            iri.unit,
            di.qty_deliver,
-           COALESCE(
-               (
-                   SELECT cp.unit_price
-                   FROM customer_prices cp
-                   WHERE cp.customer_id = ?
-                     AND cp.product_code_id = iri.product_code_id
-                     AND cp.effective_date <= d.delivery_date
-                     AND (cp.expired_date IS NULL OR cp.expired_date >= d.delivery_date)
-                     AND cp.is_active = 1
-                   ORDER BY cp.effective_date DESC, cp.id DESC
-                   LIMIT 1
-               ),
-               0
-           ) AS unit_price
+           ir.is_rework,
+           CASE WHEN ir.is_rework = 1 THEN 0
+                ELSE COALESCE(
+                    (
+                        SELECT cp.unit_price
+                        FROM customer_prices cp
+                        WHERE cp.customer_id = ?
+                          AND cp.product_code_id = iri.product_code_id
+                          AND cp.effective_date <= d.delivery_date
+                          AND (cp.expired_date IS NULL OR cp.expired_date >= d.delivery_date)
+                          AND cp.is_active = 1
+                        ORDER BY cp.effective_date DESC, cp.id DESC
+                        LIMIT 1
+                    ),
+                    0
+                )
+           END AS unit_price
     FROM oqc_delivery_items di
     JOIN oqc_deliveries d ON d.id = di.delivery_id
     JOIN production_items pi ON di.production_item_id = pi.id
@@ -251,13 +260,14 @@ $sheet1->getStyle("A{$startRow1}:G{$startRow1}")->applyFromArray($headerStyle);
 $row = $startRow1 + 1;
 $totalSummary = 0;
 foreach ($summaryRows as $idx => $r) {
-    $lineAmount = (float)$r['total_amount'];
+    $lineAmount = $r['is_rework'] ? 0 : (float)$r['total_amount'];
+    $description = $r['description'] . ($r['is_rework'] ? ' [REWORK]' : '');
     $totalSummary += $lineAmount;
     $sheet1->setCellValue("A{$row}", $idx + 1);
     $sheet1->setCellValue("B{$row}", $r['product_code']);
-    $sheet1->setCellValue("C{$row}", $r['description']);
+    $sheet1->setCellValue("C{$row}", $description);
     $sheet1->setCellValue("D{$row}", $r['unit']);
-    $sheet1->setCellValue("E{$row}", (float)$r['unit_price']);
+    $sheet1->setCellValue("E{$row}", $r['is_rework'] ? 0 : (float)$r['unit_price']);
     $sheet1->setCellValue("F{$row}", (float)$r['total_qty']);
     $sheet1->setCellValue("G{$row}", $lineAmount);
 
@@ -267,7 +277,8 @@ foreach ($summaryRows as $idx => $r) {
     $sheet1->getStyle("D{$row}:D{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
     $sheet1->getStyle("E{$row}:G{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
     $sheet1->getStyle("F{$row}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FCE4D6');
-    $sheet1->getStyle("A{$row}:G{$row}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB(($idx % 2 === 0) ? 'FFFFFF' : 'F2F7FF');
+    $rowBg = $r['is_rework'] ? 'FFF9C4' : (($idx % 2 === 0) ? 'FFFFFF' : 'F2F7FF');
+    $sheet1->getStyle("A{$row}:G{$row}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($rowBg);
     $row++;
 }
 
@@ -315,17 +326,18 @@ $sheet2->getStyle("A{$startRow2}:J{$startRow2}")->applyFromArray($headerStyle);
 $row2 = $startRow2 + 1;
 $totalDetail = 0;
 foreach ($detailRows as $idx => $r) {
-    $lineAmount = (float)$r['qty_deliver'] * (float)$r['unit_price'];
+    $lineAmount = $r['is_rework'] ? 0 : (float)$r['qty_deliver'] * (float)$r['unit_price'];
+    $description = $r['description'] . ($r['is_rework'] ? ' [REWORK]' : '');
     $totalDetail += $lineAmount;
     $sheet2->setCellValue("A{$row2}", $idx + 1);
     $sheet2->setCellValue("B{$row2}", date('d/m/Y', strtotime($r['delivery_date'])));
     $sheet2->setCellValue("C{$row2}", $r['delivery_no']);
     $sheet2->setCellValue("D{$row2}", $r['iqc_receipt_no']);
     $sheet2->setCellValue("E{$row2}", $r['product_code']);
-    $sheet2->setCellValue("F{$row2}", $r['description']);
+    $sheet2->setCellValue("F{$row2}", $description);
     $sheet2->setCellValue("G{$row2}", $r['unit']);
     $sheet2->setCellValue("H{$row2}", (float)$r['qty_deliver']);
-    $sheet2->setCellValue("I{$row2}", (float)$r['unit_price']);
+    $sheet2->setCellValue("I{$row2}", $r['is_rework'] ? 0 : (float)$r['unit_price']);
     $sheet2->setCellValue("J{$row2}", $lineAmount);
 
     $sheet2->getStyle("A{$row2}:J{$row2}")->applyFromArray($bodyBorder);
@@ -335,7 +347,8 @@ foreach ($detailRows as $idx => $r) {
     $sheet2->getStyle("G{$row2}:G{$row2}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
     $sheet2->getStyle("H{$row2}:J{$row2}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
     $sheet2->getStyle("H{$row2}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FCE4D6');
-    $sheet2->getStyle("A{$row2}:J{$row2}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB(($idx % 2 === 0) ? 'FFFFFF' : 'F2F7FF');
+    $rowBg = $r['is_rework'] ? 'FFF9C4' : (($idx % 2 === 0) ? 'FFFFFF' : 'F2F7FF');
+    $sheet2->getStyle("A{$row2}:J{$row2}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($rowBg);
     $row2++;
 }
 

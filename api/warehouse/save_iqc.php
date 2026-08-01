@@ -7,7 +7,7 @@ ob_clean();
 header('Content-Type: application/json');
 requireLoginApi();
 requireRoleApi('director', 'accountant', 'warehouse', 'production', 'manager');
-ensurePostCsrfApi();
+ensurePostCsrf();
 
 $pdo = getDBConnection();
 $customerId   = (int)($_POST['customer_id'] ?? 0);
@@ -15,6 +15,7 @@ $receiptNo    = trim((string)($_POST['receipt_no'] ?? ''));
 $receivedDate = trim((string)($_POST['received_date'] ?? ''));
 $receivedBy   = (int)($_POST['received_by'] ?? 0);
 $note         = trim((string)($_POST['note'] ?? '')) ?: null;
+$isRework     = isset($_POST['is_rework']) && $_POST['is_rework'] === '1' ? 1 : 0;
 $items        = $_POST['items'] ?? [];
 
 if ($receiptNo === '') {
@@ -64,9 +65,9 @@ try {
     // Bắt đầu transaction chính
     $pdo->beginTransaction();
 
-    $pdo->prepare('INSERT INTO iqc_receipts (receipt_no, customer_id, received_date, received_by, note, status, created_by)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)')
-        ->execute([$receiptNo, $customerId, $receivedDate, $receivedBy, $note, 'open', currentUserId()]);
+    $pdo->prepare('INSERT INTO iqc_receipts (receipt_no, customer_id, received_date, received_by, note, status, is_rework, created_by)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$receiptNo, $customerId, $receivedDate, $receivedBy, $note, 'open', $isRework, currentUserId()]);
     $receiptId = (int)$pdo->lastInsertId();
 
     $pdo->prepare('INSERT INTO production_orders (order_no, iqc_receipt_id, status, note, created_by)
