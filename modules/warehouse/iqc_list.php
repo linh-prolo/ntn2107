@@ -21,7 +21,7 @@ if ($isDefaultView) { $where[] = "(r.status != 'done' OR r.received_date = CURDA
 $customers = fetchAllSafe($pdo, 'SELECT id, customer_name FROM customers WHERE is_active = 1 ORDER BY customer_name');
 $receivers = fetchAllSafe($pdo, 'SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name');
 
-$receipts = fetchAllSafe($pdo, "SELECT r.id, r.receipt_no, r.received_date, r.status, r.note,
+$receipts = fetchAllSafe($pdo, "SELECT r.id, r.receipt_no, r.received_date, r.status, r.note, r.is_rework,
                                c.customer_name, u.full_name AS received_by_name,
                                COUNT(ri.id) AS item_count
                                FROM iqc_receipts r
@@ -116,7 +116,12 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <?php endif; ?>
                 <?php foreach ($receipts as $row): ?>
                     <tr>
-                        <td class="fw-semibold"><?= e($row['receipt_no']) ?></td>
+                        <td class="fw-semibold">
+                            <?= e($row['receipt_no']) ?>
+                            <?php if ($row['is_rework']): ?>
+                            <span class="badge bg-warning text-dark ms-1">Rework</span>
+                            <?php endif; ?>
+                        </td>
                         <td><?= e(formatDate($row['received_date'])) ?></td>
                         <td><?= e($row['customer_name'] ?? '—') ?></td>
                         <td class="text-center"><?= e((string)$row['item_count']) ?></td>
@@ -189,6 +194,14 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <div class="col-md-12">
                             <label class="form-label fw-semibold">Ghi chú</label>
                             <textarea class="form-control" name="note" rows="2" placeholder="Ghi chú về lô hàng..."></textarea>
+                        </div>
+                        <div class="col-md-12">
+                            <div class="form-check form-switch mt-1">
+                                <input class="form-check-input" type="checkbox" name="is_rework" id="iqcIsRework" value="1">
+                                <label class="form-check-label fw-semibold text-warning" for="iqcIsRework">
+                                    <i class="fas fa-undo me-1"></i>Hàng nhận lại để sửa chữa (Rework – miễn phí cho khách)
+                                </label>
+                            </div>
                         </div>
                     </div>
                     <hr>
@@ -396,6 +409,7 @@ document.getElementById('iqcItemsBody').addEventListener('change', function (e) 
 document.getElementById('modalCreateIqc').addEventListener('hidden.bs.modal', function () {
     document.getElementById('iqcItemsBody').innerHTML = '';
     document.getElementById('formCreateIqc').reset();
+    document.getElementById('iqcIsRework').checked = false;
     document.getElementById('noCustomerAlert').style.display = 'none';
     document.getElementById('noProductAlert').style.display  = 'none';
     cachedCustomerId = null;

@@ -50,22 +50,26 @@ try {
                pc.description,
                iri.unit,
                di.qty_deliver AS quantity,
-               COALESCE(
-                   (SELECT cp.unit_price
-                    FROM customer_prices cp
-                    WHERE cp.customer_id    = ?
-                      AND cp.product_code_id = iri.product_code_id
-                      AND cp.effective_date <= d.delivery_date
-                      AND (cp.expired_date IS NULL OR cp.expired_date >= d.delivery_date)
-                      AND cp.is_active = 1
-                    ORDER BY cp.effective_date DESC, cp.id DESC
-                    LIMIT 1),
-                  0
-               ) AS unit_price
+               ir.is_rework,
+               CASE WHEN ir.is_rework = 1 THEN 0
+                    ELSE COALESCE(
+                        (SELECT cp.unit_price
+                         FROM customer_prices cp
+                         WHERE cp.customer_id    = ?
+                           AND cp.product_code_id = iri.product_code_id
+                           AND cp.effective_date <= d.delivery_date
+                           AND (cp.expired_date IS NULL OR cp.expired_date >= d.delivery_date)
+                           AND cp.is_active = 1
+                         ORDER BY cp.effective_date DESC, cp.id DESC
+                         LIMIT 1),
+                        0
+                    )
+               END AS unit_price
         FROM oqc_delivery_items di
         JOIN oqc_deliveries d ON d.id = di.delivery_id
         JOIN production_items pi ON di.production_item_id = pi.id
         JOIN iqc_receipt_items iri ON pi.iqc_item_id = iri.id
+        JOIN iqc_receipts ir ON ir.id = iri.receipt_id
         JOIN product_codes pc ON pc.id = iri.product_code_id
         WHERE di.delivery_id IN ($placeholders)
           AND di.type = 'done'
@@ -79,6 +83,7 @@ try {
     $itemsByDelivery = [];
     foreach ($allItems as $item) {
         $item['total_price'] = round((float) $item['quantity'] * (float) $item['unit_price']);
+        $item['is_rework']   = (int)$item['is_rework'];
         $itemsByDelivery[$item['delivery_id']][] = $item;
     }
 
