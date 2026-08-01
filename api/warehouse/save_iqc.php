@@ -9,10 +9,16 @@ ensurePostCsrfApi();
 
 $pdo = getDBConnection();
 $customerId   = (int)($_POST['customer_id'] ?? 0);
+$receiptNo    = trim((string)($_POST['receipt_no'] ?? ''));
 $receivedDate = trim((string)($_POST['received_date'] ?? ''));
 $receivedBy   = (int)($_POST['received_by'] ?? 0);
 $note         = trim((string)($_POST['note'] ?? '')) ?: null;
 $items        = $_POST['items'] ?? [];
+
+if ($receiptNo === '') {
+    echo json_encode(['ok' => false, 'msg' => 'Vui lòng nhập số phiếu']);
+    exit;
+}
 
 if ($customerId <= 0 || $receivedBy <= 0 || $receivedDate === '' || !is_array($items)) {
     echo json_encode(['ok' => false, 'msg' => 'Dữ liệu không hợp lệ']);
@@ -41,9 +47,8 @@ if (!$validItems) {
 }
 
 try {
-    // Sinh số chứng từ TRƯỚC khi mở transaction chính
+    // Sinh số lệnh SX TRƯỚC khi mở transaction chính
     // (generateDocNo tự dùng transaction riêng bên trong)
-    $receiptNo = generateDocNo($pdo, 'IQC');
     $orderNo   = generateDocNo($pdo, 'PO');
 
     // Bắt đầu transaction chính
