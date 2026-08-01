@@ -17,6 +17,16 @@ if (!$delivery) {
     exit;
 }
 
+// Lấy danh sách số phiếu IQC liên quan đến phiếu giao hàng này
+$iqcNos = fetchAllSafe($pdo, "SELECT DISTINCT ir.receipt_no
+    FROM oqc_delivery_items di
+    JOIN production_items pi ON di.production_item_id = pi.id
+    JOIN iqc_receipt_items iri ON pi.iqc_item_id = iri.id
+    JOIN iqc_receipts ir ON iri.receipt_id = ir.id
+    WHERE di.delivery_id = ?
+    ORDER BY ir.receipt_no", [$id]);
+$iqcNoStr = implode(', ', array_column($iqcNos, 'receipt_no'));
+
 $items = fetchAllSafe($pdo, "SELECT di.*, pi.qty_total, pi.qty_done, pi.qty_error,
                            pc.product_code, pc.description, iri.unit
                            FROM oqc_delivery_items di
@@ -59,6 +69,7 @@ body{font-family:DejaVu Sans,Arial,sans-serif;color:#222;font-size:14px}.wrap{ma
         </div>
         <div class="box">
             <div><strong>Ngày giao:</strong> <?= e(formatDate($delivery['delivery_date'])) ?></div>
+            <div><strong>Số IQC:</strong> <?= e($iqcNoStr ?: '—') ?></div>
             <div><strong>Người nhận hàng:</strong> <?= e($delivery['sender_name']) ?></div>
             <div><strong>Phương tiện:</strong> <?= e($delivery['vehicle_plate']) ?> | <strong>Tài xế:</strong> <?= e($delivery['driver_name']) ?></div>
         </div>
