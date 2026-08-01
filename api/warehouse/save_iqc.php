@@ -1,7 +1,9 @@
 <?php
+ob_start();
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
+ob_clean();
 header('Content-Type: application/json');
 requireLoginApi();
 requireRoleApi('director', 'accountant', 'warehouse', 'production', 'manager');
@@ -22,6 +24,14 @@ if ($receiptNo === '') {
 
 if ($customerId <= 0 || $receivedBy <= 0 || $receivedDate === '' || !is_array($items)) {
     echo json_encode(['ok' => false, 'msg' => 'Dữ liệu không hợp lệ']);
+    exit;
+}
+
+// Kiểm tra số phiếu đã tồn tại chưa
+$existing = $pdo->prepare('SELECT id FROM iqc_receipts WHERE receipt_no = ?');
+$existing->execute([$receiptNo]);
+if ($existing->fetch()) {
+    echo json_encode(['ok' => false, 'msg' => 'Số phiếu "' . $receiptNo . '" đã tồn tại. Vui lòng nhập số phiếu khác.']);
     exit;
 }
 
