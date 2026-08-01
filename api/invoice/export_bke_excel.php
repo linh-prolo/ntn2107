@@ -100,6 +100,7 @@ $summaryRows = $summaryStmt->fetchAll(PDO::FETCH_ASSOC);
 $detailStmt = $pdo->prepare("
     SELECT d.delivery_date,
            d.delivery_no,
+           ir.receipt_no AS iqc_receipt_no,
            pc.product_code,
            pc.description,
            iri.unit,
@@ -122,12 +123,13 @@ $detailStmt = $pdo->prepare("
     JOIN oqc_deliveries d ON d.id = di.delivery_id
     JOIN production_items pi ON di.production_item_id = pi.id
     JOIN iqc_receipt_items iri ON pi.iqc_item_id = iri.id
+    JOIN iqc_receipts ir ON ir.id = iri.receipt_id
     JOIN product_codes pc ON pc.id = iri.product_code_id
     WHERE d.customer_id = ?
       AND d.delivery_date BETWEEN ? AND ?
       AND d.status <> 'invoiced'
       AND di.type = 'done'
-    ORDER BY d.delivery_date, d.delivery_no, pc.product_code
+    ORDER BY d.delivery_date, d.delivery_no, ir.receipt_no, pc.product_code
 ");
 $detailStmt->execute([$customerId, $customerId, $fromDate, $toDate]);
 $detailRows = $detailStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -178,35 +180,35 @@ function numberToWordsVn(int $n): string {
     return ucfirst(trim(implode(' ', array_reverse($parts)))) . ' đồng chẵn';
 }
 
-function setupSheetHeader($sheet, array $meta): int {
-    $sheet->mergeCells('A1:G1');
+function setupSheetHeader($sheet, array $meta, string $lastCol = 'G'): int {
+    $sheet->mergeCells("A1:{$lastCol}1");
     $sheet->setCellValue('A1', $meta['company_name']);
-    $sheet->mergeCells('A2:G2');
+    $sheet->mergeCells("A2:{$lastCol}2");
     $sheet->setCellValue('A2', trim($meta['company_address'] . ($meta['company_phone'] ? ' | ĐT: ' . $meta['company_phone'] : '')));
-    $sheet->mergeCells('A3:G3');
+    $sheet->mergeCells("A3:{$lastCol}3");
     $sheet->setCellValue('A3', 'MST: ' . ($meta['company_tax'] ?: '—'));
 
-    $sheet->mergeCells('A5:G5');
+    $sheet->mergeCells("A5:{$lastCol}5");
     $sheet->setCellValue('A5', 'BẢNG KÊ CHI TIẾT XUẤT HÀNG [' . $meta['customer_code'] . ']');
-    $sheet->mergeCells('A6:G6');
+    $sheet->mergeCells("A6:{$lastCol}6");
     $sheet->setCellValue('A6', 'Từ ngày ' . date('d/m/Y', strtotime($meta['from'])) . ' đến ngày ' . date('d/m/Y', strtotime($meta['to'])));
 
-    $sheet->mergeCells('A8:G8');
+    $sheet->mergeCells("A8:{$lastCol}8");
     $sheet->setCellValue('A8', 'BÊN MUA: ' . $meta['customer_name']);
-    $sheet->mergeCells('A9:G9');
+    $sheet->mergeCells("A9:{$lastCol}9");
     $sheet->setCellValue('A9', 'Địa chỉ: ' . ($meta['customer_address'] ?: '—'));
-    $sheet->mergeCells('A10:G10');
+    $sheet->mergeCells("A10:{$lastCol}10");
     $sheet->setCellValue('A10', 'MST: ' . ($meta['customer_tax'] ?: '—'));
 
-    $sheet->mergeCells('A12:G12');
+    $sheet->mergeCells("A12:{$lastCol}12");
     $sheet->setCellValue('A12', 'BÊN BÁN: ' . $meta['company_name']);
-    $sheet->mergeCells('A13:G13');
+    $sheet->mergeCells("A13:{$lastCol}13");
     $sheet->setCellValue('A13', 'Địa chỉ: ' . ($meta['company_address'] ?: '—'));
-    $sheet->mergeCells('A14:G14');
+    $sheet->mergeCells("A14:{$lastCol}14");
     $sheet->setCellValue('A14', 'MST: ' . ($meta['company_tax'] ?: '—'));
 
-    $sheet->getStyle('A1:G14')->getFont()->setName('Times New Roman')->setSize(10);
-    $sheet->getStyle('A1:G3')->getFont()->setBold(true);
+    $sheet->getStyle("A1:{$lastCol}14")->getFont()->setName('Times New Roman')->setSize(10);
+    $sheet->getStyle("A1:{$lastCol}3")->getFont()->setBold(true);
     $sheet->getStyle('A5')->getFont()->setBold(true)->setSize(13);
     $sheet->getStyle('A5:A6')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
@@ -306,9 +308,9 @@ $sheet1->getColumnDimension('E')->setWidth(16);
 $sheet1->getColumnDimension('F')->setWidth(12);
 $sheet1->getColumnDimension('G')->setWidth(18);
 
-$startRow2 = setupSheetHeader($sheet2, $meta);
-$sheet2->fromArray(['STT', 'Ngày giao', 'Số biên bản', 'Mã SP', 'Tên hàng', 'ĐVT', 'SL', 'Đơn giá', 'Thành tiền'], null, 'A' . $startRow2);
-$sheet2->getStyle("A{$startRow2}:I{$startRow2}")->applyFromArray($headerStyle);
+$startRow2 = setupSheetHeader($sheet2, $meta, 'J');
+$sheet2->fromArray(['STT', 'Ngày giao', 'Số biên bản', 'Số IQC', 'Mã SP', 'Tên hàng', 'ĐVT', 'SL', 'Đơn giá', 'Thành tiền'], null, 'A' . $startRow2);
+$sheet2->getStyle("A{$startRow2}:J{$startRow2}")->applyFromArray($headerStyle);
 
 $row2 = $startRow2 + 1;
 $totalDetail = 0;
@@ -318,61 +320,63 @@ foreach ($detailRows as $idx => $r) {
     $sheet2->setCellValue("A{$row2}", $idx + 1);
     $sheet2->setCellValue("B{$row2}", date('d/m/Y', strtotime($r['delivery_date'])));
     $sheet2->setCellValue("C{$row2}", $r['delivery_no']);
-    $sheet2->setCellValue("D{$row2}", $r['product_code']);
-    $sheet2->setCellValue("E{$row2}", $r['description']);
-    $sheet2->setCellValue("F{$row2}", $r['unit']);
-    $sheet2->setCellValue("G{$row2}", (float)$r['qty_deliver']);
-    $sheet2->setCellValue("H{$row2}", (float)$r['unit_price']);
-    $sheet2->setCellValue("I{$row2}", $lineAmount);
+    $sheet2->setCellValue("D{$row2}", $r['iqc_receipt_no']);
+    $sheet2->setCellValue("E{$row2}", $r['product_code']);
+    $sheet2->setCellValue("F{$row2}", $r['description']);
+    $sheet2->setCellValue("G{$row2}", $r['unit']);
+    $sheet2->setCellValue("H{$row2}", (float)$r['qty_deliver']);
+    $sheet2->setCellValue("I{$row2}", (float)$r['unit_price']);
+    $sheet2->setCellValue("J{$row2}", $lineAmount);
 
-    $sheet2->getStyle("A{$row2}:I{$row2}")->applyFromArray($bodyBorder);
-    $sheet2->getStyle("A{$row2}:I{$row2}")->getFont()->setName('Times New Roman')->setSize(10);
+    $sheet2->getStyle("A{$row2}:J{$row2}")->applyFromArray($bodyBorder);
+    $sheet2->getStyle("A{$row2}:J{$row2}")->getFont()->setName('Times New Roman')->setSize(10);
     $sheet2->getStyle("A{$row2}:A{$row2}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
     $sheet2->getStyle("B{$row2}:B{$row2}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-    $sheet2->getStyle("F{$row2}:F{$row2}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-    $sheet2->getStyle("G{$row2}:I{$row2}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-    $sheet2->getStyle("G{$row2}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FCE4D6');
-    $sheet2->getStyle("A{$row2}:I{$row2}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB(($idx % 2 === 0) ? 'FFFFFF' : 'F2F7FF');
+    $sheet2->getStyle("G{$row2}:G{$row2}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+    $sheet2->getStyle("H{$row2}:J{$row2}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+    $sheet2->getStyle("H{$row2}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FCE4D6');
+    $sheet2->getStyle("A{$row2}:J{$row2}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB(($idx % 2 === 0) ? 'FFFFFF' : 'F2F7FF');
     $row2++;
 }
 
-$sheet2->mergeCells("A{$row2}:H{$row2}");
+$sheet2->mergeCells("A{$row2}:I{$row2}");
 $sheet2->setCellValue("A{$row2}", 'TỔNG CỘNG');
-$sheet2->setCellValue("I{$row2}", $totalDetail);
-$sheet2->getStyle("A{$row2}:I{$row2}")->applyFromArray([
+$sheet2->setCellValue("J{$row2}", $totalDetail);
+$sheet2->getStyle("A{$row2}:J{$row2}")->applyFromArray([
     'font' => ['bold' => true, 'name' => 'Times New Roman', 'size' => 11],
     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFF2CC']],
     'alignment' => ['vertical' => Alignment::VERTICAL_CENTER],
     'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => 'B7B7B7']]],
 ]);
 $sheet2->getStyle("A{$row2}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-$sheet2->getStyle("I{$row2}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+$sheet2->getStyle("J{$row2}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
 $row2++;
 
-$sheet2->mergeCells("A{$row2}:I{$row2}");
+$sheet2->mergeCells("A{$row2}:J{$row2}");
 $sheet2->setCellValue("A{$row2}", 'Số tiền bằng chữ: ' . numberToWordsVn((int)round($totalDetail)));
-$sheet2->getStyle("A{$row2}:I{$row2}")->getFont()->setName('Times New Roman')->setSize(10)->setItalic(true);
+$sheet2->getStyle("A{$row2}:J{$row2}")->getFont()->setName('Times New Roman')->setSize(10)->setItalic(true);
 $row2 += 2;
 
-$sheet2->mergeCells("A{$row2}:D{$row2}");
-$sheet2->mergeCells("F{$row2}:I{$row2}");
+$sheet2->mergeCells("A{$row2}:E{$row2}");
+$sheet2->mergeCells("G{$row2}:J{$row2}");
 $sheet2->setCellValue("A{$row2}", 'ĐẠI DIỆN BÊN MUA');
-$sheet2->setCellValue("F{$row2}", 'ĐẠI DIỆN BÊN BÁN');
-$sheet2->getStyle("A{$row2}:I{$row2}")->getFont()->setBold(true)->setName('Times New Roman')->setSize(10);
-$sheet2->getStyle("A{$row2}:I{$row2}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+$sheet2->setCellValue("G{$row2}", 'ĐẠI DIỆN BÊN BÁN');
+$sheet2->getStyle("A{$row2}:J{$row2}")->getFont()->setBold(true)->setName('Times New Roman')->setSize(10);
+$sheet2->getStyle("A{$row2}:J{$row2}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
-$sheet2->getStyle("G" . ($startRow2 + 1) . ":I{$row2}")->getNumberFormat()->setFormatCode($moneyFmt);
-$sheet2->getStyle("G" . ($startRow2 + 1) . ":G{$row2}")->getNumberFormat()->setFormatCode('#,##0.###');
+$sheet2->getStyle("H" . ($startRow2 + 1) . ":J{$row2}")->getNumberFormat()->setFormatCode($moneyFmt);
+$sheet2->getStyle("H" . ($startRow2 + 1) . ":H{$row2}")->getNumberFormat()->setFormatCode('#,##0.###');
 
 $sheet2->getColumnDimension('A')->setWidth(7);
 $sheet2->getColumnDimension('B')->setWidth(12);
 $sheet2->getColumnDimension('C')->setWidth(18);
 $sheet2->getColumnDimension('D')->setWidth(14);
-$sheet2->getColumnDimension('E')->setWidth(30);
-$sheet2->getColumnDimension('F')->setWidth(10);
-$sheet2->getColumnDimension('G')->setWidth(12);
-$sheet2->getColumnDimension('H')->setWidth(16);
-$sheet2->getColumnDimension('I')->setWidth(18);
+$sheet2->getColumnDimension('E')->setWidth(14);
+$sheet2->getColumnDimension('F')->setWidth(30);
+$sheet2->getColumnDimension('G')->setWidth(10);
+$sheet2->getColumnDimension('H')->setWidth(12);
+$sheet2->getColumnDimension('I')->setWidth(16);
+$sheet2->getColumnDimension('J')->setWidth(18);
 
 foreach ([$sheet1, $sheet2] as $sheet) {
     $sheet->getPageSetup()->setOrientation(PageSetup::ORIENTATION_PORTRAIT);
