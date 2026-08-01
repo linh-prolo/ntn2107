@@ -160,6 +160,10 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <div class="modal-body">
                     <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
                     <div class="row g-3 mb-3">
+                        <div class="col-md-2">
+                            <label class="form-label fw-semibold">Số phiếu <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="receipt_no" id="iqcReceiptNo" required placeholder="VD: IQC-001">
+                        </div>
                         <div class="col-md-4">
                             <label class="form-label fw-semibold">Khách hàng <span class="text-danger">*</span></label>
                             <select class="form-select" name="customer_id" id="iqcCustomer" required>
