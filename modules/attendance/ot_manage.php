@@ -93,7 +93,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
 
         $start_time = trim($_POST['start_time'] ?? '');
         $end_time   = trim($_POST['end_time'] ?? '');
+        $ot_type    = trim($_POST['ot_type'] ?? '');
         $note       = trim($_POST['edit_note'] ?? '');
+        $validTypes = ['weekday', 'weekend', 'holiday', 'night', 'night_weekday', 'night_weekend', 'night_holiday'];
+        if (!in_array($ot_type, $validTypes, true)) {
+            $ot_type = 'weekday';
+        }
         if (!$ot_id || !$start_time || !$end_time) {
             setFlash('danger', '❌ Dữ liệu không hợp lệ.');
             header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
@@ -129,8 +134,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
 
         try {
             $pdo->beginTransaction();
-            $pdo->prepare("UPDATE overtime_requests SET start_time = ?, end_time = ?, hours = ?, approved_by = ?, approved_at = NOW() WHERE id = ?")
-                ->execute([$start_time, $end_time, $hours, $user['id'], $ot_id]);
+            $pdo->prepare("UPDATE overtime_requests SET start_time = ?, end_time = ?, hours = ?, ot_type = ?, approved_by = ?, approved_at = NOW() WHERE id = ?")
+                ->execute([$start_time, $end_time, $hours, $ot_type, $user['id'], $ot_id]);
             $msg = "Giám đốc đã cập nhật số giờ OT ngày " . formatDate($otRow['ot_date']) .
                    " thành {$hours}h ({$start_time}–{$end_time})" . ($note ? ". Ghi chú: {$note}" : ".");
             $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, 'Giám đốc cập nhật giờ OT', ?, 'ot_request', ?)")
@@ -655,7 +660,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 </button>
                                 <?php if ($user['role'] === 'director'): ?>
                                 <button type="button" class="btn btn-xs btn-outline-primary"
-                                        onclick='showEditHours(<?= $ot['id'] ?>, <?= htmlspecialchars(json_encode($ot["full_name"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["start_time"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["end_time"]), ENT_QUOTES, "UTF-8") ?>, <?= (float)$ot["hours"] ?>)'
+                                        onclick='showEditHours(<?= $ot['id'] ?>, <?= htmlspecialchars(json_encode($ot["full_name"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["start_time"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["end_time"]), ENT_QUOTES, "UTF-8") ?>, <?= (float)$ot["hours"] ?>, <?= htmlspecialchars(json_encode($ot["ot_type"]), ENT_QUOTES, "UTF-8") ?>)'
                                         title="Sửa giờ OT">
                                     <i class="fas fa-pencil-alt"></i>
                                 </button>
@@ -677,7 +682,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <?php endif; ?>
                                 <?php if ($user['role'] === 'director'): ?>
                                 <button type="button" class="btn btn-xs btn-outline-primary"
-                                        onclick='showEditHours(<?= $ot['id'] ?>, <?= htmlspecialchars(json_encode($ot["full_name"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["start_time"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["end_time"]), ENT_QUOTES, "UTF-8") ?>, <?= (float)$ot["hours"] ?>)'
+                                        onclick='showEditHours(<?= $ot['id'] ?>, <?= htmlspecialchars(json_encode($ot["full_name"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["start_time"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["end_time"]), ENT_QUOTES, "UTF-8") ?>, <?= (float)$ot["hours"] ?>, <?= htmlspecialchars(json_encode($ot["ot_type"]), ENT_QUOTES, "UTF-8") ?>)'
                                         title="Sửa giờ OT">
                                     <i class="fas fa-pencil-alt"></i>
                                 </button>
@@ -743,7 +748,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <?php if ($user['role'] === 'director'): ?>
                     <div class="mt-2">
                         <button type="button" class="btn btn-outline-primary btn-sm w-100"
-                                onclick='showEditHours(<?= $ot['id'] ?>, <?= htmlspecialchars(json_encode($ot["full_name"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["start_time"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["end_time"]), ENT_QUOTES, "UTF-8") ?>, <?= (float)$ot["hours"] ?>)'>
+                                onclick='showEditHours(<?= $ot['id'] ?>, <?= htmlspecialchars(json_encode($ot["full_name"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["start_time"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["end_time"]), ENT_QUOTES, "UTF-8") ?>, <?= (float)$ot["hours"] ?>, <?= htmlspecialchars(json_encode($ot["ot_type"]), ENT_QUOTES, "UTF-8") ?>)'>
                             ⏱️ Sửa giờ
                         </button>
                     </div>
@@ -877,6 +882,18 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         Số giờ tính được: <strong id="editHoursCalc" class="text-primary fs-5">—</strong>
                     </div>
                     <div class="mb-0 mt-3">
+                        <label class="form-label fw-semibold">Loại OT</label>
+                        <select name="ot_type" id="editHoursOtType" class="form-select" required>
+                            <option value="weekday">Ngày thường</option>
+                            <option value="weekend">Cuối tuần</option>
+                            <option value="holiday">Ngày lễ</option>
+                            <option value="night_weekday">🌙 Đêm thường ×2.1</option>
+                            <option value="night_weekend">🌙 Đêm CN ×2.7</option>
+                            <option value="night_holiday">🌙 Đêm lễ ×3.9</option>
+                            <option value="night">🌙 Đêm (cũ) ×1.3</option>
+                        </select>
+                    </div>
+                    <div class="mb-0 mt-3">
                         <label class="form-label fw-semibold">Ghi chú lý do</label>
                         <textarea name="edit_note" class="form-control" rows="2" placeholder="Lý do chỉnh sửa giờ OT..."></textarea>
                     </div>
@@ -944,12 +961,13 @@ function recalcEditHours() {
     }
 }
 
-function showEditHours(id, name, startTime, endTime, hours) {
+function showEditHours(id, name, startTime, endTime, hours, otType) {
     document.getElementById('editHoursOtId').value = id;
     document.getElementById('editHoursEmp').textContent = name;
     document.getElementById('editHoursStart').value = (startTime || '').substring(0, 5);
     document.getElementById('editHoursEnd').value = (endTime || '').substring(0, 5);
     document.getElementById('editHoursCalc').textContent = hours + 'h';
+    document.getElementById('editHoursOtType').value = otType || 'weekday';
     document.querySelector('#editHoursModal textarea').value = '';
     recalcEditHours();
     new bootstrap.Modal(document.getElementById('editHoursModal')).show();
