@@ -83,6 +83,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         exit();
     }
 
+    // ── Giám đốc sửa tay giờ OT (mọi trạng thái) ──
+    if ($action === 'director_edit_hours') {
+        if ($user['role'] !== 'director') {
+            setFlash('danger', '⛔ Bạn không có quyền thực hiện thao tác này.');
+            header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+            exit();
+        }
+
+        $start_time = trim($_POST['start_time'] ?? '');
+        $end_time   = trim($_POST['end_time'] ?? '');
+        $note       = trim($_POST['edit_note'] ?? '');
+        if (!$ot_id || !$start_time || !$end_time) {
+            setFlash('danger', '❌ Dữ liệu không hợp lệ.');
+            header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+            exit();
+        }
+
+        $startDt = DateTime::createFromFormat('H:i', $start_time);
+        $endDt   = DateTime::createFromFormat('H:i', $end_time);
+        if (!$startDt || !$endDt) {
+            setFlash('danger', '❌ Định dạng giờ không hợp lệ.');
+            header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+            exit();
+        }
+
+        $startMin = ((int)$startDt->format('H')) * 60 + (int)$startDt->format('i');
+        $endMin   = ((int)$endDt->format('H')) * 60 + (int)$endDt->format('i');
+        if ($endMin <= $startMin) $endMin += 1440; // qua ngày hôm sau
+        $hours = round(($endMin - $startMin) / 60, 2);
+        if ($hours <= 0 || $hours > 24) {
+            setFlash('danger', '❌ Số giờ OT không hợp lệ.');
+            header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+            exit();
+        }
+
+        $otStmt = $pdo->prepare("SELECT user_id, ot_date, status FROM overtime_requests WHERE id = ? AND status IN ('pending','approved','rejected')");
+        $otStmt->execute([$ot_id]);
+        $otRow = $otStmt->fetch();
+        if (!$otRow) {
+            setFlash('danger', '❌ Không tìm thấy đơn OT hợp lệ.');
+            header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+            exit();
+        }
+
+        try {
+            $pdo->beginTransaction();
+            $pdo->prepare("UPDATE overtime_requests SET start_time = ?, end_time = ?, hours = ?, approved_by = ?, approved_at = NOW() WHERE id = ?")
+                ->execute([$start_time, $end_time, $hours, $user['id'], $ot_id]);
+            $msg = "Giám đốc đã cập nhật số giờ OT ngày " . formatDate($otRow['ot_date']) .
+                   " thành {$hours}h ({$start_time}–{$end_time})" . ($note ? ". Ghi chú: {$note}" : ".");
+            $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, 'Giám đốc cập nhật giờ OT', ?, 'ot_request', ?)")
+                ->execute([$otRow['user_id'], $msg, $ot_id]);
+            $pdo->commit();
+            setFlash('success', "✅ Đã cập nhật số giờ OT thành {$hours}h.");
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            setFlash('danger', '❌ Không thể cập nhật giờ OT.');
+        }
+
+        header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+        exit();
+    }
+
     // ── Duyệt 1 đơn ──
     if ($action === 'approve') {
         $owner = getOtOwner($pdo, $ot_id);
@@ -590,6 +653,13 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                         title="Từ chối">
                                     <i class="fas fa-times"></i>
                                 </button>
+                                <?php if ($user['role'] === 'director'): ?>
+                                <button type="button" class="btn btn-xs btn-outline-primary"
+                                        onclick='showEditHours(<?= $ot['id'] ?>, <?= htmlspecialchars(json_encode($ot["full_name"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["start_time"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["end_time"]), ENT_QUOTES, "UTF-8") ?>, <?= (float)$ot["hours"] ?>)'
+                                        title="Sửa giờ OT">
+                                    <i class="fas fa-pencil-alt"></i>
+                                </button>
+                                <?php endif; ?>
                             </div>
                             <?php else: ?>
                             <div class="d-flex gap-1 justify-content-center">
@@ -603,6 +673,13 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                         onclick='showOverrideOt(<?= $ot['id'] ?>, <?= htmlspecialchars(json_encode($ot["full_name"]), ENT_QUOTES, "UTF-8") ?>)'
                                         title="Override">
                                     <i class="fas fa-edit"></i>
+                                </button>
+                                <?php endif; ?>
+                                <?php if ($user['role'] === 'director'): ?>
+                                <button type="button" class="btn btn-xs btn-outline-primary"
+                                        onclick='showEditHours(<?= $ot['id'] ?>, <?= htmlspecialchars(json_encode($ot["full_name"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["start_time"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["end_time"]), ENT_QUOTES, "UTF-8") ?>, <?= (float)$ot["hours"] ?>)'
+                                        title="Sửa giờ OT">
+                                    <i class="fas fa-pencil-alt"></i>
                                 </button>
                                 <?php endif; ?>
                                 <?php if ($user['role'] === 'director' && $ot['status'] === 'approved'): ?>
@@ -660,6 +737,14 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <button type="button" class="btn btn-outline-warning btn-sm w-100"
                                 onclick='showOverrideOt(<?= $ot['id'] ?>, <?= htmlspecialchars(json_encode($ot["full_name"]), ENT_QUOTES, "UTF-8") ?>)'>
                             ✏️ Override
+                        </button>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($user['role'] === 'director'): ?>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100"
+                                onclick='showEditHours(<?= $ot['id'] ?>, <?= htmlspecialchars(json_encode($ot["full_name"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["start_time"]), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ot["end_time"]), ENT_QUOTES, "UTF-8") ?>, <?= (float)$ot["hours"] ?>)'>
+                            ⏱️ Sửa giờ
                         </button>
                     </div>
                     <?php endif; ?>
@@ -765,6 +850,46 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
     </div>
 </div>
 
+<!-- Modal Sửa giờ OT (Giám đốc) -->
+<div class="modal fade" id="editHoursModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+                <input type="hidden" name="action" value="director_edit_hours">
+                <input type="hidden" name="ot_id" id="editHoursOtId">
+                <div class="modal-header bg-primary bg-opacity-10 border-0">
+                    <h6 class="modal-title fw-bold">⏱️ Sửa giờ OT — <span id="editHoursEmp"></span></h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Giờ bắt đầu <span class="text-danger">*</span></label>
+                            <input type="time" name="start_time" id="editHoursStart" class="form-control" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Giờ kết thúc <span class="text-danger">*</span></label>
+                            <input type="time" name="end_time" id="editHoursEnd" class="form-control" required>
+                        </div>
+                    </div>
+                    <div class="mt-3 p-2 bg-light rounded text-center">
+                        Số giờ tính được: <strong id="editHoursCalc" class="text-primary fs-5">—</strong>
+                    </div>
+                    <div class="mb-0 mt-3">
+                        <label class="form-label fw-semibold">Ghi chú lý do</label>
+                        <textarea name="edit_note" class="form-control" rows="2" placeholder="Lý do chỉnh sửa giờ OT..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Huỷ</button>
+                    <button type="submit" class="btn btn-primary fw-bold">Lưu thay đổi</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Modal Chi tiết -->
 <div class="modal fade" id="detailModal" tabindex="-1">
     <div class="modal-dialog">
@@ -804,6 +929,33 @@ function showOverrideOt(id, name) {
     document.querySelector('#overrideOtModal textarea').value = '';
     new bootstrap.Modal(document.getElementById('overrideOtModal')).show();
 }
+
+function recalcEditHours() {
+    const s = document.getElementById('editHoursStart').value;
+    const e = document.getElementById('editHoursEnd').value;
+    if (s && e) {
+        let sm = parseInt(s.split(':')[0], 10) * 60 + parseInt(s.split(':')[1], 10);
+        let em = parseInt(e.split(':')[0], 10) * 60 + parseInt(e.split(':')[1], 10);
+        if (em <= sm) em += 1440;
+        const h = ((em - sm) / 60).toFixed(2);
+        document.getElementById('editHoursCalc').textContent = h + 'h';
+    } else {
+        document.getElementById('editHoursCalc').textContent = '—';
+    }
+}
+
+function showEditHours(id, name, startTime, endTime, hours) {
+    document.getElementById('editHoursOtId').value = id;
+    document.getElementById('editHoursEmp').textContent = name;
+    document.getElementById('editHoursStart').value = (startTime || '').substring(0, 5);
+    document.getElementById('editHoursEnd').value = (endTime || '').substring(0, 5);
+    document.getElementById('editHoursCalc').textContent = hours + 'h';
+    document.querySelector('#editHoursModal textarea').value = '';
+    recalcEditHours();
+    new bootstrap.Modal(document.getElementById('editHoursModal')).show();
+}
+document.getElementById('editHoursStart').addEventListener('change', recalcEditHours);
+document.getElementById('editHoursEnd').addEventListener('change', recalcEditHours);
 
 function getCheckedIds() {
     return [...document.querySelectorAll('.ot-check:checked')].map(cb => cb.value);
