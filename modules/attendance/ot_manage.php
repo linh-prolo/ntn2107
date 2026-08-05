@@ -28,6 +28,107 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     $ot_id         = (int)($_POST['ot_id'] ?? 0);
     $reject_reason = trim($_POST['reject_reason'] ?? '');
 
+    // ── Giám đốc tạo đơn OT cho nhân viên ──
+    if ($action === 'director_create_ot') {
+        if ($user['role'] !== 'director') {
+            setFlash('danger', '⛔ Bạn không có quyền thực hiện thao tác này.');
+            header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+            exit();
+        }
+
+        $target_user_id = (int)($_POST['target_user_id'] ?? 0);
+        $ot_date        = trim($_POST['ot_date'] ?? '');
+        $start_time     = trim($_POST['start_time'] ?? '');
+        $end_time       = trim($_POST['end_time'] ?? '');
+        $ot_type        = trim($_POST['ot_type'] ?? 'weekday');
+        $reason         = trim($_POST['reason'] ?? '');
+        $auto_approve   = (int)($_POST['auto_approve'] ?? 1);
+
+        $validTypes = ['weekday', 'weekend', 'holiday', 'night', 'night_weekday', 'night_weekend', 'night_holiday'];
+        if (!in_array($ot_type, $validTypes, true)) $ot_type = 'weekday';
+
+        $errors = [];
+        if (!$target_user_id) $errors[] = 'Vui lòng chọn nhân viên.';
+        if (!$ot_date)         $errors[] = 'Vui lòng chọn ngày OT.';
+        if (!$start_time)      $errors[] = 'Vui lòng nhập giờ bắt đầu.';
+        if (!$end_time)        $errors[] = 'Vui lòng nhập giờ kết thúc.';
+        if (!$reason)          $errors[] = 'Vui lòng nhập lý do OT.';
+
+        if (empty($errors)) {
+            $startDt = DateTime::createFromFormat('H:i', $start_time);
+            $endDt   = DateTime::createFromFormat('H:i', $end_time);
+            if (!$startDt || !$endDt) {
+                $errors[] = 'Định dạng giờ không hợp lệ.';
+            } else {
+                $startMin = ((int)$startDt->format('H')) * 60 + (int)$startDt->format('i');
+                $endMin   = ((int)$endDt->format('H')) * 60 + (int)$endDt->format('i');
+                if ($endMin <= $startMin) $endMin += 1440;
+                $hours = round(($endMin - $startMin) / 60, 2);
+                if ($hours <= 0 || $hours > 24) $errors[] = 'Số giờ OT không hợp lệ (tối đa 24h).';
+            }
+        }
+
+        if (empty($errors)) {
+            $chk = $pdo->prepare("SELECT COUNT(*) FROM overtime_requests WHERE user_id = ? AND ot_date = ? AND status != 'rejected'");
+            $chk->execute([$target_user_id, $ot_date]);
+            if ($chk->fetchColumn() > 0) {
+                $errors[] = 'Nhân viên đã có đơn OT cho ngày này rồi.';
+            }
+        }
+
+        if (!empty($errors)) {
+            setFlash('danger', '❌ ' . implode('<br>', $errors));
+            header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+            exit();
+        }
+
+        $shiftStmt = $pdo->prepare("
+            SELECT es.shift_id FROM employee_shifts es
+            JOIN work_shifts ws ON es.shift_id = ws.id
+            WHERE es.user_id = ? AND es.effective_date <= ?
+              AND (es.end_date IS NULL OR es.end_date >= ?)
+            ORDER BY es.effective_date DESC LIMIT 1
+        ");
+        $shiftStmt->execute([$target_user_id, $ot_date, $ot_date]);
+        $shiftRow = $shiftStmt->fetch();
+        $shift_id = $shiftRow['shift_id'] ?? null;
+
+        try {
+            $pdo->beginTransaction();
+
+            $status      = $auto_approve ? 'approved' : 'pending';
+            $approved_by = $auto_approve ? $user['id'] : null;
+            $approved_at = $auto_approve ? date('Y-m-d H:i:s') : null;
+
+            $pdo->prepare("
+                INSERT INTO overtime_requests
+                (user_id, ot_date, start_time, end_time, hours, reason, ot_type, shift_id, status, approved_by, approved_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ")->execute([$target_user_id, $ot_date, $start_time, $end_time, $hours, $reason, $ot_type, $shift_id, $status, $approved_by, $approved_at]);
+
+            $newId = $pdo->lastInsertId();
+
+            $empRow = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
+            $empRow->execute([$target_user_id]);
+            $empName = $empRow->fetchColumn() ?: 'Nhân viên';
+
+            $msg = "Giám đốc {$user['full_name']} đã tạo đơn OT ngày " . formatDate($ot_date) .
+                   " ({$start_time}–{$end_time}, {$hours} giờ, {$ot_type})" .
+                   ($auto_approve ? " và đã duyệt luôn." : ", đang chờ duyệt.");
+            $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, ?, ?, 'ot_request', ?)")
+                ->execute([$target_user_id, '📋 Giám đốc tạo đơn OT cho bạn', $msg, $newId]);
+
+            $pdo->commit();
+            setFlash('success', "✅ Đã tạo đơn OT cho <strong>{$empName}</strong> ngày " . formatDate($ot_date) . " ({$hours}h)" . ($auto_approve ? " và duyệt ngay." : "."));
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            setFlash('danger', '❌ Không thể tạo đơn OT: ' . $e->getMessage());
+        }
+
+        header('Location: /erp/modules/attendance/ot_manage.php?' . http_build_query($_GET));
+        exit();
+    }
+
     // ── Giám đốc override đơn OT đã duyệt/từ chối ──
     if ($action === 'director_override_ot') {
         if (!hasRole('director')) {
@@ -401,6 +502,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
             <p class="text-muted small mb-0">Tháng <?= $filterMonth ?>/<?= $filterYear ?></p>
         </div>
         <div class="d-flex gap-2">
+            <?php if (hasRole('director')): ?>
+            <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#createOtModal">
+                <i class="fas fa-plus me-1"></i>Tạo OT cho NV
+            </button>
+            <?php endif; ?>
             <a href="/erp/modules/attendance/import_ot.php" class="btn btn-outline-primary btn-sm">
                 <i class="fas fa-upload me-1"></i>Import OT
             </a>
@@ -1055,6 +1161,124 @@ function deleteOt(id, name) {
     f.innerHTML = `<input name="csrf_token" value="${CSRF}"><input name="action" value="delete_ot"><input name="ot_id" value="${id}">`;
     document.body.appendChild(f); f.submit();
 }
+
+// ── Modal tạo OT cho nhân viên ──
+function calcCreateOtHours() {
+    const s = document.getElementById('createOtStart').value;
+    const e = document.getElementById('createOtEnd').value;
+    const el = document.getElementById('createOtHoursCalc');
+    if (s && e) {
+        let sm = parseInt(s.split(':')[0], 10) * 60 + parseInt(s.split(':')[1], 10);
+        let em = parseInt(e.split(':')[0], 10) * 60 + parseInt(e.split(':')[1], 10);
+        if (em <= sm) em += 1440;
+        el.textContent = ((em - sm) / 60).toFixed(2) + 'h';
+    } else {
+        el.textContent = '—';
+    }
+}
+(function() {
+    const startEl = document.getElementById('createOtStart');
+    const endEl   = document.getElementById('createOtEnd');
+    if (startEl) startEl.addEventListener('change', calcCreateOtHours);
+    if (endEl)   endEl.addEventListener('change', calcCreateOtHours);
+})();
 </script>
 
+<?php if (hasRole('director')): ?>
+<!-- Modal Tạo OT cho nhân viên (Giám đốc) -->
+<div class="modal fade" id="createOtModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST" id="createOtForm">
+                <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+                <input type="hidden" name="action" value="director_create_ot">
+                <div class="modal-header bg-success bg-opacity-10 border-0">
+                    <h6 class="modal-title fw-bold">
+                        <i class="fas fa-plus-circle text-success me-2"></i>
+                        Giám đốc tạo đơn OT cho nhân viên
+                    </h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <!-- Nhân viên -->
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">👤 Nhân viên <span class="text-danger">*</span></label>
+                            <select name="target_user_id" id="createOtUserId" class="form-select" required>
+                                <option value="">-- Chọn nhân viên --</option>
+                                <?php foreach ($empList as $e): ?>
+                                <option value="<?= $e['id'] ?>">
+                                    <?= htmlspecialchars($e['employee_code'] . ' - ' . $e['full_name']) ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <!-- Ngày OT -->
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">📅 Ngày OT <span class="text-danger">*</span></label>
+                            <input type="date" name="ot_date" id="createOtDate" class="form-control" required
+                                   value="<?= date('Y-m-d') ?>">
+                        </div>
+
+                        <!-- Giờ bắt đầu -->
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">⏰ Giờ bắt đầu <span class="text-danger">*</span></label>
+                            <input type="time" name="start_time" id="createOtStart" class="form-control" required value="17:00">
+                        </div>
+
+                        <!-- Giờ kết thúc -->
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">⏰ Giờ kết thúc <span class="text-danger">*</span></label>
+                            <input type="time" name="end_time" id="createOtEnd" class="form-control" required value="20:00">
+                        </div>
+
+                        <!-- Preview số giờ -->
+                        <div class="col-12">
+                            <div class="p-2 bg-light rounded text-center">
+                                Số giờ OT: <strong id="createOtHoursCalc" class="text-primary fs-5">3.00h</strong>
+                            </div>
+                        </div>
+
+                        <!-- Loại OT -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">📊 Loại OT <span class="text-danger">*</span></label>
+                            <select name="ot_type" id="createOtType" class="form-select" required>
+                                <option value="weekday">Ngày thường (×1.5)</option>
+                                <option value="weekend">Cuối tuần (×2.0)</option>
+                                <option value="holiday">Ngày lễ (×3.0)</option>
+                                <option value="night_weekday">🌙 Đêm ngày thường (×2.1)</option>
+                                <option value="night_weekend">🌙 Đêm cuối tuần (×2.7)</option>
+                                <option value="night_holiday">🌙 Đêm ngày lễ (×3.9)</option>
+                            </select>
+                        </div>
+
+                        <!-- Trạng thái -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">✅ Trạng thái</label>
+                            <select name="auto_approve" class="form-select">
+                                <option value="1">Duyệt ngay (approved)</option>
+                                <option value="0">Để chờ duyệt (pending)</option>
+                            </select>
+                        </div>
+
+                        <!-- Lý do -->
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">📝 Lý do OT <span class="text-danger">*</span></label>
+                            <textarea name="reason" class="form-control" rows="3" required
+                                      placeholder="Mô tả công việc cần làm thêm giờ..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Huỷ</button>
+                    <button type="submit" class="btn btn-success fw-bold">
+                        <i class="fas fa-plus me-1"></i>Tạo đơn OT
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 <?php include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/footer.php'; ?>
