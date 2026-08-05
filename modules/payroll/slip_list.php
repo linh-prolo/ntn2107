@@ -227,7 +227,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <th class="sticky-col col-days"  rowspan="2">Ngày công</th>
                     <th class="sticky-col col-basic" rowspan="2">Lương CB</th>
                     <th colspan="6" class="grp-ot">OT</th>
-                    <th colspan="5" class="grp-allowance">Trợ cấp</th>
+                    <th colspan="4" class="grp-allowance">Trợ cấp</th>
                     <th colspan="6" class="grp-bonus">Phụ cấp & Thưởng</th><!-- ✅ colspan 4→6 -->
                     <th colspan="2" class="grp-kpi">KPI</th>
                     <th colspan="2" class="grp-leave">Nghỉ phép</th>
@@ -243,7 +243,6 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <th class="grp-ot">🌙 Đêm TT</th>
                     <th class="grp-ot">🌙 Đêm CN</th>
                     <th class="grp-ot">🌙 Đêm Lễ</th>
-                    <th class="grp-allowance">Ăn ca</th>
                     <th class="grp-allowance">Trang phục</th>
                     <th class="grp-allowance">Điện thoại</th>
                     <th class="grp-allowance">Đi lại</th>
@@ -312,7 +311,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <td class="text-end"><?= $nightHL > 0 ? number_format($nightHL) : '<span class="c-muted">—</span>' ?></td>
 
                 <!-- Trợ cấp — ✅ thêm housing_received -->
-                <?php foreach (['meal_received','clothes_received','phone_received','transport_received','housing_received'] as $f):
+                <?php foreach (['clothes_received','phone_received','transport_received','housing_received'] as $f):
                     $val = (float)($s[$f] ?? 0); ?>
                 <td class="text-end"><?= $val > 0 ? number_format($val) : '<span class="c-muted">—</span>' ?></td>
                 <?php endforeach; ?>
@@ -397,7 +396,6 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <td class="text-end"><?= number_format($totalNightWD) ?></td>
                     <td class="text-end"><?= number_format($totalNightWE) ?></td>
                     <td class="text-end"><?= number_format($totalNightHL) ?></td>
-                    <td class="text-end"><?= number_format(array_sum(array_column($slips,'meal_received'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'clothes_received'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'phone_received'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'transport_received'))) ?></td>

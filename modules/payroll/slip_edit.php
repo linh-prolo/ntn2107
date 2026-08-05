@@ -146,7 +146,6 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <div class="row g-3">
                             <?php
                             $allowFields = [
-                                'meal_received'                     => 'Ăn ca',
                                 'clothes_received'                  => 'Trang phục',
                                 'phone_received'                    => 'Điện thoại',
                                 'transport_received'                => 'Đi lại',
@@ -552,7 +551,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 <script>
 const BASE = {
     basic_received   : <?= (float)$slip['basic_salary_received'] ?>,
-    meal             : <?= (float)$slip['meal_received'] ?>,
+    meal             : 0,
     clothes          : <?= (float)$slip['clothes_received'] ?>,
     phone            : <?= (float)$slip['phone_received'] ?>,
     transport        : <?= (float)$slip['transport_received'] ?>,

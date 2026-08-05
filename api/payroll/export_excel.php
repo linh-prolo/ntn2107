@@ -57,7 +57,7 @@ $slips = $stmt->fetchAll(PDO::FETCH_ASSOC);
 // I  OT Thường
 // J  OT CN
 // K  OT Lễ
-// L  Ăn ca
+// L  (bỏ - ăn ca)
 // M  Trang phục
 // N  Điện thoại
 // O  Đi lại
@@ -161,7 +161,7 @@ $headers = [
     'J'  => 'OT CN',
     'K'  => 'OT Lễ',
     // Trợ cấp
-    'L'  => 'Ăn ca',
+    'L'  => '', // Đã bỏ ăn ca
     'M'  => 'Trang phục',
     'N'  => 'Điện thoại',
     'O'  => 'Đi lại',
@@ -236,7 +236,7 @@ foreach ($slips as $i => $s) {
         'J'  => (float)$s['ot_weekend_amount'],
         'K'  => (float)$s['ot_holiday_amount'],
         // Trợ cấp
-        'L'  => (float)$s['meal_received'],
+        'L'  => 0, // Đã bỏ ăn ca
         'M'  => (float)$s['clothes_received'],
         'N'  => (float)$s['phone_received'],
         'O'  => (float)$s['transport_received'],

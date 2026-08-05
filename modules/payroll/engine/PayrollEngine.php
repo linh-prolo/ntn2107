@@ -302,7 +302,9 @@ class PayrollEngine
 
         // ── Trợ cấp thực nhận ────────────────────────────────────────
 
-        $mealReceived      = round($mealAllow * $mealRatio) + $otMealBonus;
+        $mealReceived = 0; // Đã bỏ: công ty nấu cơm tập thể, không trả tiền ăn ca
+        $otMealBonus  = 0; // Đã bỏ ăn ca OT
+        $otMealDays   = 0;
 
         $clothesReceived   = round($clothesAllow   * $allowanceRatio);
 
@@ -451,9 +453,6 @@ class PayrollEngine
 
         if ($nightShiftBonus > 0)
             $remarkParts[] = "Phụ trội đêm: +".number_format($nightShiftBonus)." đ (30% × ".number_format($nightHoursActual,1)."h × lương CB/giờ)";
-        if ($otMealDays > 0)
-            $remarkParts[] = "Ăn ca OT: +".number_format($otMealBonus)." đ ($otMealDays ngày OT ≥ 3h × ".number_format(self::OT_MEAL_ALLOWANCE)." đ)";
-
         if ($responsibilityReceived > 0)
             $remarkParts[] = "PC Trách nhiệm: +".number_format($responsibilityReceived)." đ";
         if ($seniorityReceived > 0)
