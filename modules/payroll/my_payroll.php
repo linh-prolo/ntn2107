@@ -157,11 +157,10 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     </div>
                     <table class="table table-sm table-bordered mb-4">
                         <tr class="table-dark">
-                            <td class="fw-bold">Lương Tổng / Gross salary (=1+2+3+4+5+5b+5c+5d+6+7)</td>
+                            <td class="fw-bold">Lương Tổng / Gross salary (=1+3+4+5+5b+5c+5d+6+7)</td>
                             <td class="text-end fw-bold">
                                 <?= number_format(
                                     $slipDetail['basic_salary'] +
-                                    $slipDetail['meal_allowance'] +
                                     $slipDetail['clothes_allowance'] +
                                     $slipDetail['phone_allowance'] +
                                     $slipDetail['transport_allowance'] +
@@ -177,7 +176,6 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <?php
                         $items = [
                             ['(1) Lương cơ bản / Basic salary',                    'basic_salary'],
-                            ['(2) Trợ cấp ăn uống / Meal allowance',               'meal_allowance'],
                             ['(3) Trợ cấp trang phục / Clothes allowance',         'clothes_allowance'],
                             ['(4) Trợ cấp điện thoại / Mobile allowance',          'phone_allowance'],
                             ['(5) Trợ cấp xăng xe / Gas-travelling allowance',     'transport_allowance'],
@@ -251,9 +249,8 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <?php
                         $items2 = [
                             ['(15) Lương CB thực nhận / Basic salary received',       'basic_salary_received'],
-                            ['(16) Trợ cấp ăn uống thực nhận / Meal received',        'meal_received'],
-                            ['(17) Trợ cấp trang phục thực nhận / Clothes received',  'clothes_received'],
-                            ['(18) Trợ cấp điện thoại thực nhận / Mobile received',   'phone_received'],
+                            ['(16) Trợ cấp trang phục thực nhận / Clothes received',  'clothes_received'],
+                            ['(17) Trợ cấp điện thoại thực nhận / Mobile received',   'phone_received'],
                             ['(19) Trợ cấp xăng xe thực nhận / Transport received',   'transport_received'],
 							['(19b) Trợ cấp nhà ở thực nhận / Housing received',      'housing_received'],
                            ['(19c) PC Trách nhiệm thực nhận / Responsibility received', 'responsibility_allowance_received'],

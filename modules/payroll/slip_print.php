@@ -487,20 +487,11 @@ table.data .kpi-deduct-row td { background: #f8d7da; }
             <td class="amt pos"><?= number_format($s['basic_salary_received']) ?> đ</td>
         </tr>
         <tr>
-            <td class="lbl sub">
-                (10) Trợ cấp ăn ca / Meal allowance
-                <?php if ($otMealDays > 0): ?>
-                <span class="badge badge-info"><?= $otMealDays ?> ngày OT ≥ 3h + <?= number_format($otMealBonus) ?>đ</span>
-                <?php endif; ?>
-            </td>
-            <td class="amt pos"><?= number_format($s['meal_received']) ?> đ</td>
-        </tr>
-        <tr>
-            <td class="lbl sub">(11) Trợ cấp trang phục / Clothes allowance</td>
+            <td class="lbl sub">(10) Trợ cấp trang phục / Clothes allowance</td>
             <td class="amt pos"><?= number_format($s['clothes_received']) ?> đ</td>
         </tr>
         <tr>
-            <td class="lbl sub">(12) Trợ cấp điện thoại / Mobile allowance</td>
+            <td class="lbl sub">(11) Trợ cấp điện thoại / Mobile allowance</td>
             <td class="amt pos"><?= number_format($s['phone_received']) ?> đ</td>
         </tr>
         <tr>
