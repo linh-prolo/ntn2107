@@ -28,7 +28,7 @@ $iqcNos = fetchAllSafe($pdo, "SELECT DISTINCT ir.receipt_no
 $iqcNoStr = implode(', ', array_column($iqcNos, 'receipt_no'));
 
 $items = fetchAllSafe($pdo, "SELECT di.*, pi.qty_total, pi.qty_done, pi.qty_error,
-                           pc.product_code, pc.description, iri.unit
+                           pc.product_code, pc.description, iri.unit, iri.note AS iqc_note
                            FROM oqc_delivery_items di
                            JOIN production_items pi ON di.production_item_id = pi.id
                            JOIN iqc_receipt_items iri ON pi.iqc_item_id = iri.id
@@ -86,7 +86,7 @@ body{font-family:DejaVu Sans,Arial,sans-serif;color:#222;font-size:14px}.wrap{ma
                 <td class="<?= $it['type']==='error'?'type-error':'type-done' ?>"><?= $it['type']==='error' ? 'Lỗi-Trả lại' : 'Thành phẩm' ?></td>
                 <td class="text-end"><?= e(number_format((float)$it['qty_deliver'], 2, ',', '.')) ?></td>
                 <td><?= e($it['unit']) ?></td>
-                <td><?= e($it['note']) ?></td>
+                <td><?= e($it['iqc_note'] ?? '') ?></td>
             </tr>
         <?php endforeach; ?>
         </tbody>
