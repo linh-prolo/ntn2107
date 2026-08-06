@@ -17,8 +17,9 @@ $items = fetchAllSafe($pdo, "SELECT i.id, i.product_code_id, i.qty, i.unit, i.no
                                    cp.process_step
                             FROM iqc_receipt_items i
                             JOIN product_codes pc ON pc.id = i.product_code_id
+                            JOIN iqc_receipts ir ON ir.id = i.receipt_id
                             LEFT JOIN customer_prices cp ON cp.product_code_id = i.product_code_id
-                                AND cp.customer_id = (SELECT customer_id FROM iqc_receipts WHERE id = i.receipt_id)
+                                AND cp.customer_id = ir.customer_id
                                 AND cp.effective_date <= CURDATE()
                                 AND (cp.expired_date IS NULL OR cp.expired_date >= CURDATE())
                             WHERE i.receipt_id = ?

@@ -37,13 +37,6 @@ $isValidDate = function ($date): bool {
 };
 
 try {
-    // Ensure process_step column exists (safe migration)
-    try {
-        $pdo->exec("ALTER TABLE customer_prices ADD COLUMN process_step VARCHAR(100) NULL DEFAULT NULL COMMENT 'Công đoạn sản xuất (chỉ dùng nội bộ, không in lên hóa đơn)' AFTER note");
-    } catch (PDOException $alterEx) {
-        // Column already exists — ignore
-    }
-
     if ($action === 'delete') {
         if (!$customerId || !$productCodeId) {
             if (!$id) {
