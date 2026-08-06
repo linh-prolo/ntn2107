@@ -192,20 +192,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     </thead>
                     <tbody>
                     <?php
-                    $prevDept = null;
                     foreach ($employees as $emp):
-                        // Header phòng ban
-                        if ($emp['dept_name'] !== $prevDept):
-                            $prevDept = $emp['dept_name'];
-                    ?>
-                    <tr class="table-secondary">
-                        <td colspan="<?= $daysInMon + 5 ?>" class="fw-bold small py-1 ps-3">
-                            🏢 <?= htmlspecialchars($emp['dept_name'] ?? 'Chưa phân phòng ban') ?>
-                        </td>
-                    </tr>
-                    <?php endif; ?>
-
-                    <?php
                         $workDays = 0; $lateDays = 0; $leaveDays = 0;
                     ?>
                     <tr>

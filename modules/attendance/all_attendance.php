@@ -400,17 +400,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     </thead>
                     <tbody>
                     <?php
-                    $prevDept = null;
                     foreach ($employees as $emp):
-                        if ($emp['dept_name'] !== $prevDept):
-                            $prevDept = $emp['dept_name'];
-                    ?>
-                    <tr class="dept-row">
-                        <td colspan="<?= $daysInMon + 7 ?>" class="py-1 ps-3 fw-bold small">
-                            🏢 <?= htmlspecialchars($emp['dept_name'] ?? 'Chưa phân phòng ban') ?>
-                        </td>
-                    </tr>
-                    <?php endif;
                         $st = calcStats($emp['id'], $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $daysInMon, $holidayDates);
                         // Tổng phút trừ = trễ + về sớm
                         $totalDeductMin = $st['late_minutes'] + $st['early_minutes'];
@@ -591,7 +581,6 @@ $content .= '</div>';
                     </thead>
                     <tbody>
                     <?php
-                    $prevDept    = null;
                     $grandTotals = array_fill_keys([
                         'work_days','total_hours','leave_days','absent_days',
                         'late_count','late_minutes','early_count','early_minutes',
@@ -600,15 +589,6 @@ $content .= '</div>';
                     ], 0);
 
                     foreach ($employees as $emp):
-                        if ($emp['dept_name'] !== $prevDept):
-                            $prevDept = $emp['dept_name'];
-                    ?>
-                    <tr class="table-secondary">
-                        <td colspan="<?= $summaryColCount ?>" class="fw-bold small py-1 ps-3">
-                            🏢 <?= htmlspecialchars($emp['dept_name'] ?? 'Chưa phân phòng ban') ?>
-                        </td>
-                    </tr>
-                    <?php endif;
                         $st = calcStats($emp['id'], $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $daysInMon, $holidayDates);
                         foreach ($grandTotals as $k => $v) $grandTotals[$k] += $st[$k];
                         $totalDeductMin = $st['late_minutes'] + $st['early_minutes'];
