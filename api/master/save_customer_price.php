@@ -12,17 +12,19 @@ if (!verifyCSRF($_POST['csrf_token'] ?? '')) {
     echo json_encode(['ok' => false, 'msg' => 'CSRF invalid']); exit;
 }
 
-$action        = trim($_POST['action'] ?? 'save');
-$id            = (int)($_POST['id'] ?? 0);
-$customerId    = (int)($_POST['customer_id'] ?? 0);
-$productCodeId = (int)($_POST['product_code_id'] ?? 0);
-$unitPrice     = (float)($_POST['unit_price'] ?? 0);
-$effectiveDate = trim($_POST['effective_date'] ?? date('Y-m-d'));
-$note          = trim($_POST['note'] ?? '') ?: null;
-$productCode   = strtoupper(trim($_POST['product_code'] ?? ''));
-$description   = trim($_POST['description'] ?? '');
-$unit          = trim($_POST['unit'] ?? '');
-$expiredDate   = trim($_POST['expired_date'] ?? '') ?: null;
+$action              = trim($_POST['action'] ?? 'save');
+$id                  = (int)($_POST['id'] ?? 0);
+$customerId          = (int)($_POST['customer_id'] ?? 0);
+$productCodeId       = (int)($_POST['product_code_id'] ?? 0);
+$unitPrice           = (float)($_POST['unit_price'] ?? 0);
+$effectiveDate       = trim($_POST['effective_date'] ?? date('Y-m-d'));
+$note                = trim($_POST['note'] ?? '') ?: null;
+$productCode         = strtoupper(trim($_POST['product_code'] ?? ''));
+$description         = trim($_POST['description'] ?? '');
+$unit                = trim($_POST['unit'] ?? '');
+$expiredDate         = trim($_POST['expired_date'] ?? '') ?: null;
+$processStep         = trim($_POST['process_step'] ?? '') ?: null;
+$descriptionOverride = trim($_POST['description_override'] ?? '') ?: null;
 
 if ($action === 'save') {
     $action = $id ? 'edit' : 'add';
@@ -103,9 +105,9 @@ try {
         ")->execute([$priorPeriodEndDate, $customerId, $productCodeId, $effectiveDate, $effectiveDate]);
 
         $pdo->prepare("
-            INSERT INTO customer_prices (customer_id, product_code_id, unit_price, effective_date, expired_date, note, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, 1)
-        ")->execute([$customerId, $productCodeId, $unitPrice, $effectiveDate, $expiredDate, $note]);
+            INSERT INTO customer_prices (customer_id, product_code_id, unit_price, effective_date, expired_date, note, process_step, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        ")->execute([$customerId, $productCodeId, $unitPrice, $effectiveDate, $expiredDate, $note, $processStep]);
 
         $pdo->commit();
         echo json_encode(['ok' => true, 'msg' => 'Đã thêm đơn giá']);
@@ -139,9 +141,15 @@ try {
         $pdo->prepare("UPDATE customer_prices SET expired_date = ? WHERE id = ?")
             ->execute([$priorPeriodEndDate, $id]);
         $pdo->prepare("
-            INSERT INTO customer_prices (customer_id, product_code_id, unit_price, effective_date, expired_date, note, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, 1)
-        ")->execute([$customerId, $productCodeId, $unitPrice, $effectiveDate, $expiredDate, $note]);
+            INSERT INTO customer_prices (customer_id, product_code_id, unit_price, effective_date, expired_date, note, process_step, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        ")->execute([$customerId, $productCodeId, $unitPrice, $effectiveDate, $expiredDate, $note, $processStep]);
+
+        if ($descriptionOverride !== null && hasRole('director', 'manager')) {
+            $pdo->prepare("UPDATE product_codes SET description = ? WHERE id = ?")
+                ->execute([$descriptionOverride, $productCodeId]);
+        }
+
         $pdo->commit();
 
         echo json_encode(['ok' => true, 'msg' => 'Đã cập nhật giá mới']);

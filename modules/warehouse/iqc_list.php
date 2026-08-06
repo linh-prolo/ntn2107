@@ -261,12 +261,13 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <tr>
                                 <th>Mã hàng</th>
                                 <th>Tên hàng</th>
+                                <th>Công đoạn</th>
                                 <th class="text-end">Số lượng</th>
                                 <th>ĐVT</th>
                             </tr>
                         </thead>
                         <tbody id="iqcDetailBody">
-                            <tr><td colspan="4" class="text-center text-muted">Đang tải...</td></tr>
+                            <tr><td colspan="5" class="text-center text-muted">Đang tải...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -507,7 +508,7 @@ document.querySelectorAll('.btn-delete-iqc').forEach(btn => btn.addEventListener
 document.querySelectorAll('.btn-view-items').forEach(btn => btn.addEventListener('click', async function () {
     document.getElementById('iqcDetailNo').textContent = this.dataset.no;
     const body = document.getElementById('iqcDetailBody');
-    body.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin me-1"></i>Đang tải...</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin me-1"></i>Đang tải...</td></tr>';
     new bootstrap.Modal(document.getElementById('modalIqcItems')).show();
     try {
         const res  = await fetch('/erp/api/warehouse/get_iqc_items.php?receipt_id=' + this.dataset.id);
@@ -515,7 +516,7 @@ document.querySelectorAll('.btn-view-items').forEach(btn => btn.addEventListener
         let data;
         try { data = JSON.parse(text); } catch (e) {
             console.error('[get_iqc_items] Non-JSON response:', text);
-            body.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Lỗi tải dữ liệu</td></tr>';
+            body.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Lỗi tải dữ liệu</td></tr>';
             return;
         }
         if (data.ok && data.items.length) {
@@ -523,14 +524,15 @@ document.querySelectorAll('.btn-view-items').forEach(btn => btn.addEventListener
                 <tr>
                     <td><span class="badge bg-primary">${escHtml(it.product_code)}</span></td>
                     <td>${escHtml(it.description)}</td>
+                    <td>${it.process_step ? `<span class="badge bg-secondary">${escHtml(it.process_step)}</span>` : '—'}</td>
                     <td class="text-end fw-semibold">${Number(it.qty).toLocaleString('vi-VN')}</td>
                     <td>${escHtml(it.unit)}</td>
                 </tr>`).join('');
         } else {
-            body.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Không có dữ liệu</td></tr>';
+            body.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Không có dữ liệu</td></tr>';
         }
     } catch (err) {
-        body.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Lỗi tải dữ liệu</td></tr>';
+        body.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Lỗi tải dữ liệu</td></tr>';
     }
 }));
 </script>
