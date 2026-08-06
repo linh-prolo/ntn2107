@@ -223,6 +223,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <tr>
                                     <th style="width:35%">Mã hàng</th>
                                     <th>Tên hàng</th>
+                                    <th>Công đoạn</th>
                                     <th style="width:12%">SL <span class="text-danger">*</span></th>
                                     <th style="width:10%">ĐVT</th>
                                     <th>Ghi chú</th>
@@ -310,11 +311,16 @@ function buildProductOptions(products, selectedId = '') {
         return '<option value="">-- Chưa có sản phẩm --</option>';
     }
     const opts = products.map(pc => {
-        const sel = String(selectedId) === String(pc.id) ? 'selected' : '';
-        return `<option value="${escHtml(pc.id)}"
+        const sel = String(selectedId) === String(pc.price_id || pc.id) ? 'selected' : '';
+        const label = pc.process_step
+            ? `${pc.product_code} — ${pc.description} [${pc.process_step}]`
+            : `${pc.product_code} — ${pc.description}`;
+        return `<option value="${escHtml(pc.price_id || pc.id)}"
                         data-unit="${escHtml(pc.unit || 'cái')}"
                         data-desc="${escHtml(pc.description || '')}"
-                        ${sel}>${escHtml(pc.product_code)} — ${escHtml(pc.description)}</option>`;
+                        data-process-step="${escHtml(pc.process_step || '')}"
+                        data-product-code-id="${escHtml(pc.id)}"
+                        ${sel}>${escHtml(label)}</option>`;
     }).join('');
     return `<option value="">-- Chọn mã hàng --</option>${opts}`;
 }
@@ -342,11 +348,13 @@ async function addItemRow() {
     const tr  = document.createElement('tr');
     tr.innerHTML = `
         <td>
-            <select class="form-select form-select-sm" name="items[${idx}][product_code_id]" required>
+            <input type="hidden" name="items[${idx}][product_code_id]" class="item-product-code-id">
+            <select class="form-select form-select-sm item-price-select" required>
                 ${buildProductOptions(products)}
             </select>
         </td>
         <td><span class="item-desc text-muted small fst-italic"></span></td>
+        <td><span class="item-process-step text-muted small"></span></td>
         <td><input type="number" class="form-control form-control-sm item-qty"
                    name="items[${idx}][qty]" min="0.01" step="0.01" required
                    placeholder="0"></td>
@@ -361,6 +369,16 @@ async function addItemRow() {
         </td>
     `;
     tbody.appendChild(tr);
+    // Initialize hidden product_code_id from the first selected option (if any)
+    const sel = tr.querySelector('.item-price-select');
+    if (sel && sel.selectedIndex > 0) {
+        const opt = sel.options[sel.selectedIndex];
+        tr.querySelector('.item-product-code-id').value    = opt?.dataset.productCodeId || '';
+        tr.querySelector('.item-desc').textContent         = opt?.dataset.desc || '';
+        tr.querySelector('.item-process-step').textContent = opt?.dataset.processStep || '';
+        const unitEl = tr.querySelector('input[name*="[unit]"]');
+        if (unitEl) unitEl.value = opt?.dataset.unit || 'cái';
+    }
 }
 
 // Khi đổi khách hàng → xoá tất cả dòng cũ, reset cache, thêm 1 dòng mới
@@ -388,8 +406,8 @@ document.getElementById('iqcItemsBody').addEventListener('click', function (e) {
 
 function reindexRows() {
     document.querySelectorAll('#iqcItemsBody tr').forEach((tr, idx) => {
-        tr.querySelector('select').name               = `items[${idx}][product_code_id]`;
-        tr.querySelector('.item-qty').name            = `items[${idx}][qty]`;
+        tr.querySelector('.item-product-code-id').name    = `items[${idx}][product_code_id]`;
+        tr.querySelector('.item-qty').name                = `items[${idx}][qty]`;
         tr.querySelectorAll('input[type="text"]')[0].name = `items[${idx}][unit]`;
         tr.querySelectorAll('input[type="text"]')[1].name = `items[${idx}][note]`;
     });
@@ -397,10 +415,12 @@ function reindexRows() {
 
 // Chọn mã hàng → điền tên + đơn vị
 document.getElementById('iqcItemsBody').addEventListener('change', function (e) {
-    if (e.target.tagName === 'SELECT' && e.target.name.includes('product_code_id')) {
-        const opt  = e.target.options[e.target.selectedIndex];
-        const tr   = e.target.closest('tr');
-        tr.querySelector('.item-desc').textContent = opt?.dataset.desc || '';
+    if (e.target.tagName === 'SELECT' && e.target.classList.contains('item-price-select')) {
+        const opt = e.target.options[e.target.selectedIndex];
+        const tr  = e.target.closest('tr');
+        tr.querySelector('.item-desc').textContent         = opt?.dataset.desc || '';
+        tr.querySelector('.item-process-step').textContent = opt?.dataset.processStep || '';
+        tr.querySelector('.item-product-code-id').value    = opt?.dataset.productCodeId || '';
         const unitEl = tr.querySelector('input[name*="[unit]"]');
         if (unitEl) unitEl.value = opt?.dataset.unit || 'cái';
     }
