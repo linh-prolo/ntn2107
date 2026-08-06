@@ -30,7 +30,7 @@ if ($filterDept) {
     $sql .= " AND u.department_id = ?";
     $params[] = $filterDept;
 }
-$sql .= " ORDER BY d.name, u.full_name";
+$sql .= " ORDER BY u.employee_code";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
