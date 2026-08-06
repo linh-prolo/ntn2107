@@ -21,7 +21,7 @@ $stmt = $pdo->prepare("
     LEFT JOIN employee_profiles ep ON ep.user_id = u.id
     LEFT JOIN departments d ON u.department_id = d.id
     WHERE ps.period_id = ?
-    ORDER BY d.name, u.full_name
+    ORDER BY u.employee_code
 ");
 $stmt->execute([$periodId]);
 $slips = $stmt->fetchAll(PDO::FETCH_ASSOC);

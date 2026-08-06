@@ -45,7 +45,7 @@ $empParams = [$periodStart, $periodStart];
 
 if ($filterDept) { $empSQL .= " AND u.department_id = ?"; $empParams[] = $filterDept; }
 if ($filterUser) { $empSQL .= " AND u.id = ?";            $empParams[] = $filterUser; }
-$empSQL .= " ORDER BY d.name, u.full_name";
+$empSQL .= " ORDER BY u.employee_code";
 
 $empStmt = $pdo->prepare($empSQL);
 $empStmt->execute($empParams);
