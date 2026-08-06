@@ -22,7 +22,7 @@ if (!$customer) {
 }
 
 $currentStmt = $pdo->prepare("
-    SELECT cp.*, pc.product_code, pc.description, pc.unit
+    SELECT cp.*, pc.product_code, pc.description, pc.unit, cp.process_step
     FROM customer_prices cp
     JOIN product_codes pc ON cp.product_code_id = pc.id
     LEFT JOIN customer_prices cp_newer
@@ -191,6 +191,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                         <tr>
                                             <th>Mã SP</th>
                                             <th>Mô tả</th>
+                                            <th>Công đoạn</th>
                                             <th>Đơn vị</th>
                                             <th class="text-end">Đơn giá</th>
                                             <th>Ngày áp dụng</th>
@@ -202,12 +203,13 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                     </thead>
                                     <tbody>
                                     <?php if (empty($currentPrices)): ?>
-                                        <tr><td colspan="<?= hasRole('director','accountant','manager') ? 7 : 6 ?>" class="text-center text-muted py-4">Chưa có giá hiện tại</td></tr>
+                                        <tr><td colspan="<?= hasRole('director','accountant','manager') ? 8 : 7 ?>" class="text-center text-muted py-4">Chưa có giá hiện tại</td></tr>
                                     <?php else: ?>
                                         <?php foreach ($currentPrices as $row): ?>
                                         <tr>
                                             <td><span class="badge bg-primary"><?= htmlspecialchars($row['product_code']) ?></span></td>
                                             <td><?= htmlspecialchars($row['description']) ?></td>
+                                            <td><?= !empty($row['process_step']) ? '<span class="badge bg-secondary">' . htmlspecialchars($row['process_step']) . '</span>' : '—' ?></td>
                                             <td><?= htmlspecialchars($row['unit'] ?? '—') ?></td>
                                             <td class="text-end fw-semibold"><?= number_format((float)$row['unit_price'], 0, ',', '.') ?> đ</td>
                                             <td><?= !empty($row['effective_date']) ? date('d/m/Y', strtotime($row['effective_date'])) : '—' ?></td>
@@ -222,7 +224,8 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                                         data-unit="<?= htmlspecialchars($row['unit'] ?? '') ?>"
                                                         data-price="<?= htmlspecialchars($row['unit_price']) ?>"
                                                         data-effective-date="<?= htmlspecialchars($row['effective_date'] ?? '') ?>"
-                                                        data-expired-date="<?= htmlspecialchars($row['expired_date'] ?? '') ?>">
+                                                        data-expired-date="<?= htmlspecialchars($row['expired_date'] ?? '') ?>"
+                                                        data-process-step="<?= htmlspecialchars($row['process_step'] ?? '') ?>">
                                                     <i class="fas fa-edit"></i>
                                                 </button>
                                                 <button class="btn btn-outline-danger btn-sm btn-delete-price"
@@ -387,6 +390,10 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <label class="form-label fw-semibold">Đơn vị tính <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="unit" id="priceUnit" required>
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Công đoạn <span class="text-muted small">(tùy chọn — chỉ dùng phân loại nội bộ, không in hóa đơn)</span></label>
+                            <input type="text" class="form-control" name="process_step" id="priceProcessStep" placeholder="VD: Cắt, Hàn, Sơn, ...">
+                        </div>
                     </div>
 
                     <div id="editReadonlyFields" style="display:none;">
@@ -395,12 +402,20 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <input type="text" class="form-control bg-light" id="displayProductCode" readonly>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label fw-semibold">Tên sản phẩm</label>
+                            <label class="form-label fw-semibold">Tên sản phẩm<?php if (hasRole('director','manager')): ?> <span class="text-muted small">(có thể chỉnh sửa)</span><?php endif; ?></label>
+                            <?php if (hasRole('director','manager')): ?>
+                            <input type="text" class="form-control" id="displayDescription" name="description_override">
+                            <?php else: ?>
                             <input type="text" class="form-control bg-light" id="displayDescription" readonly>
+                            <?php endif; ?>
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-semibold">Đơn vị tính</label>
                             <input type="text" class="form-control bg-light" id="displayUnit" readonly>
+                        </div>
+                        <div class="mb-3" id="editProcessStepField">
+                            <label class="form-label fw-semibold">Công đoạn <span class="text-muted small">(không in hóa đơn)</span></label>
+                            <input type="text" class="form-control" name="process_step" id="editProcessStep" placeholder="VD: Cắt, Hàn, ...">
                         </div>
                     </div>
 
@@ -533,6 +548,7 @@ document.querySelectorAll('.btn-edit-price').forEach(btn => {
         document.getElementById('displayProductCode').value = btn.dataset.productCode || '';
         document.getElementById('displayDescription').value = btn.dataset.description || '';
         document.getElementById('displayUnit').value = btn.dataset.unit || '';
+        document.getElementById('editProcessStep').value = btn.dataset.processStep || '';
         document.getElementById('priceValue').value = btn.dataset.price;
         document.getElementById('priceDate').value = btn.dataset.effectiveDate || '<?= date('Y-m-d') ?>';
         document.getElementById('priceExpiredDate').value = btn.dataset.expiredDate || '';

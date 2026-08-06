@@ -47,8 +47,9 @@ $customers = fetchAllSafe($pdo, 'SELECT id, customer_name FROM customers WHERE i
 
 $rows = fetchAllSafe($pdo, "
     SELECT pi.id, pi.qty_total, pi.qty_done, pi.qty_error, pi.status, pi.updated_at,
-           po.order_no, c.customer_name,
+           po.order_no, c.customer_name, c.id AS customer_id,
            pc.product_code, pc.description,
+           cp.process_step,
            (pi.qty_total - pi.qty_done - pi.qty_error) AS qty_pending
     FROM production_items pi
     JOIN production_orders po ON po.id = pi.order_id
@@ -56,6 +57,10 @@ $rows = fetchAllSafe($pdo, "
     JOIN iqc_receipts r ON r.id = po.iqc_receipt_id
     JOIN customers c ON c.id = r.customer_id
     JOIN product_codes pc ON pc.id = iri.product_code_id
+    LEFT JOIN customer_prices cp ON cp.product_code_id = iri.product_code_id
+        AND cp.customer_id = r.customer_id
+        AND cp.effective_date <= CURDATE()
+        AND (cp.expired_date IS NULL OR cp.expired_date >= CURDATE())
     WHERE " . implode(' AND ', $where) . "
     ORDER BY pi.updated_at DESC, pi.id DESC
 ", $params);
@@ -143,6 +148,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <th>Khách hàng</th>
                         <th>Mã hàng</th>
                         <th>Tên hàng</th>
+                        <th>Công đoạn</th>
                         <th class="text-end text-success">SL HT</th>
                         <th class="text-end text-danger">SL Lỗi</th>
                         <th class="text-end text-warning">SL Chờ</th>
@@ -153,7 +159,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 </thead>
                 <tbody>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="10" class="text-center text-muted py-4">Không có dữ liệu OQC</td></tr>
+                    <tr><td colspan="11" class="text-center text-muted py-4">Không có dữ liệu OQC</td></tr>
                 <?php endif; ?>
                 <?php foreach($rows as $row): ?>
                     <tr class="<?= (float)$row['qty_error'] > 0 ? 'table-danger bg-opacity-25' : '' ?>">
@@ -161,6 +167,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <td><?= e($row['customer_name']) ?></td>
                         <td><span class="badge bg-primary"><?= e($row['product_code']) ?></span></td>
                         <td><?= e($row['description']) ?></td>
+                        <td><?= !empty($row['process_step']) ? '<span class="badge bg-secondary">' . e($row['process_step']) . '</span>' : '—' ?></td>
                         <td class="text-end text-success fw-semibold"><?= e(number_format((float)$row['qty_done'],2,',','.')) ?></td>
                         <td class="text-end text-danger fw-semibold"><?= e(number_format((float)$row['qty_error'],2,',','.')) ?></td>
                         <td class="text-end text-warning fw-semibold"><?= e(number_format(max((float)$row['qty_pending'],0),2,',','.')) ?></td>
