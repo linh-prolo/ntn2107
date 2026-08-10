@@ -93,13 +93,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         setFlash('success', 'Đã gửi đơn đăng ký OT thành công!');
-        header('Location: /erp/mobile/ot.php');
+        $otRedirectMonth = (int)date('n', strtotime($otDate));
+        $otRedirectYear  = (int)date('Y', strtotime($otDate));
+        header('Location: /erp/mobile/ot.php?month=' . $otRedirectMonth . '&year=' . $otRedirectYear);
         exit();
     }
 }
 
-$stmt = $pdo->prepare("SELECT * FROM overtime_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 5");
-$stmt->execute([$user['id']]);
+$otViewMonth = (int)($_GET['month'] ?? date('n'));
+$otViewYear  = (int)($_GET['year']  ?? date('Y'));
+if ($otViewMonth < 1 || $otViewMonth > 12) { $otViewMonth = (int)date('n'); }
+if ($otViewYear < 2020 || $otViewYear > 2030) { $otViewYear = (int)date('Y'); }
+$otPrevMonth = $otViewMonth - 1; $otPrevYear = $otViewYear;
+if ($otPrevMonth < 1) { $otPrevMonth = 12; $otPrevYear--; }
+$otNextMonth = $otViewMonth + 1; $otNextYear = $otViewYear;
+if ($otNextMonth > 12) { $otNextMonth = 1; $otNextYear++; }
+$stmt = $pdo->prepare("SELECT * FROM overtime_requests WHERE user_id = ? AND MONTH(ot_date) = ? AND YEAR(ot_date) = ? ORDER BY ot_date DESC, created_at DESC");
+$stmt->execute([$user['id'], $otViewMonth, $otViewYear]);
 $myOTs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $csrf = generateCSRF();
 
@@ -161,7 +171,11 @@ showFlash();
     </div>
 </div>
 
-<div class="fw-bold mb-2">5 đơn OT gần nhất</div>
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <a href="?month=<?= $otPrevMonth ?>&year=<?= $otPrevYear ?>" class="btn btn-sm btn-outline-secondary">‹</a>
+    <div class="fw-bold">Đơn OT tháng <?= $otViewMonth ?>/<?= $otViewYear ?></div>
+    <a href="?month=<?= $otNextMonth ?>&year=<?= $otNextYear ?>" class="btn btn-sm btn-outline-secondary">›</a>
+</div>
 <div class="list-compact">
     <?php foreach ($myOTs as $ot): ?>
         <?php $badge = mobileStatusBadge($ot['status']); ?>
