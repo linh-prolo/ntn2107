@@ -604,8 +604,16 @@ foreach ($monthLogs as $log) {
     }
 }
 
-$historyStmt = $pdo->prepare("SELECT * FROM attendance_logs WHERE user_id = ? ORDER BY work_date DESC, id DESC LIMIT 7");
-$historyStmt->execute([$user['id']]);
+$viewMonth = (int)($_GET['month'] ?? $currentMonth);
+$viewYear  = (int)($_GET['year']  ?? $currentYear);
+if ($viewMonth < 1 || $viewMonth > 12) { $viewMonth = $currentMonth; }
+if ($viewYear < 2020 || $viewYear > 2030) { $viewYear = $currentYear; }
+$prevMonth = $viewMonth - 1; $prevYear = $viewYear;
+if ($prevMonth < 1) { $prevMonth = 12; $prevYear--; }
+$nextMonth = $viewMonth + 1; $nextYear = $viewYear;
+if ($nextMonth > 12) { $nextMonth = 1; $nextYear++; }
+$historyStmt = $pdo->prepare("SELECT * FROM attendance_logs WHERE user_id = ? AND MONTH(work_date) = ? AND YEAR(work_date) = ? ORDER BY work_date DESC, id DESC");
+$historyStmt->execute([$user['id'], $viewMonth, $viewYear]);
 $recentLogs = $historyStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $csrf = generateCSRF();
@@ -794,8 +802,9 @@ showFlash();
 </div>
 
 <div class="d-flex justify-content-between align-items-center mb-2">
-    <div class="fw-bold">Lịch sử 7 ngày gần nhất</div>
-    <a href="/erp/modules/attendance/index.php" class="small text-decoration-none">Xem desktop</a>
+    <a href="?month=<?= $prevMonth ?>&year=<?= $prevYear ?>" class="btn btn-sm btn-outline-secondary">‹</a>
+    <div class="fw-bold">Lịch sử tháng <?= $viewMonth ?>/<?= $viewYear ?></div>
+    <a href="?month=<?= $nextMonth ?>&year=<?= $nextYear ?>" class="btn btn-sm btn-outline-secondary">›</a>
 </div>
 <div class="list-compact">
     <?php foreach ($recentLogs as $log): ?>
@@ -811,7 +820,15 @@ showFlash();
         <div class="history-item">
             <div class="d-flex justify-content-between align-items-start gap-2">
                 <div>
-                    <div class="fw-semibold"><?= e($label) ?></div>
+                    <div class="fw-semibold">
+                        <?= e($label) ?>
+                        <?php if (!empty($log['is_late'])): ?>
+                        <span class="badge bg-warning text-dark ms-1">Trễ</span>
+                        <?php endif; ?>
+                        <?php if (!empty($log['missing_checkout'])): ?>
+                        <span class="badge bg-danger ms-1">Thiếu ra</span>
+                        <?php endif; ?>
+                    </div>
                     <div class="small text-muted">
                         ✓ Vào: <?= $log['check_in'] ? e(date('H:i', strtotime($log['check_in']))) : '--:--' ?>
                         &nbsp; • &nbsp;
