@@ -9,16 +9,7 @@ $user = currentUser();
 $pdo = getDBConnection();
 
 $slipsStmt = $pdo->prepare("
-    SELECT ps.id, ps.period_id,
-           ps.gross_salary, ps.actual_work_days, ps.standard_work_days,
-           ps.basic_salary, ps.basic_salary_received,
-           ps.meal_received, ps.clothes_received, ps.phone_received,
-           ps.transport_received, ps.housing_received,
-           ps.responsibility_allowance_received, ps.seniority_allowance_received,
-           ps.performance_bonus, ps.attendance_bonus,
-           ps.total_ot_amount, ps.ot_weekday, ps.ot_weekend, ps.ot_holiday,
-           ps.si_employee, ps.pit_amount, ps.other_deductions, ps.net_salary,
-           ps.cash_advance, ps.bank_transfer, ps.remark,
+    SELECT ps.*,
            pp.period_month, pp.period_year, pp.period_from, pp.period_to,
            u.full_name, u.employee_code,
            d.name AS department_name,
@@ -74,22 +65,39 @@ mobilePageStart('Phiếu lương', $user);
 
 <?php if ($selectedSlip): ?>
 <?php
+$s = $selectedSlip; // shorthand
+
+// ── Trợ cấp ──────────────────────────────────────────────────────────
 $allowanceItems = [
-    'Ăn uống'      => (float)($selectedSlip['meal_received'] ?? 0),
-    'May mặc'      => (float)($selectedSlip['clothes_received'] ?? 0),
-    'Điện thoại'   => (float)($selectedSlip['phone_received'] ?? 0),
-    'Xăng xe'      => (float)($selectedSlip['transport_received'] ?? 0),
-    'Nhà ở'        => (float)($selectedSlip['housing_received'] ?? 0),
-    'Trách nhiệm'  => (float)($selectedSlip['responsibility_allowance_received'] ?? 0),
-    'Thâm niên'    => (float)($selectedSlip['seniority_allowance_received'] ?? 0),
-    'Thưởng hiệu suất' => (float)($selectedSlip['performance_bonus'] ?? 0),
-    'Thưởng chuyên cần' => (float)($selectedSlip['attendance_bonus'] ?? 0),
+    'Ăn uống'           => (float)($s['meal_received'] ?? 0),
+    'May mặc'           => (float)($s['clothes_received'] ?? 0),
+    'Điện thoại'        => (float)($s['phone_received'] ?? 0),
+    'Xăng xe'           => (float)($s['transport_received'] ?? 0),
+    'Nhà ở'             => (float)($s['housing_received'] ?? 0),
+    'PC Trách nhiệm'    => (float)($s['responsibility_allowance_received'] ?? 0),
+    'PC Thâm niên'      => (float)($s['seniority_allowance_received'] ?? 0),
+    'Thưởng hiệu suất'  => (float)($s['performance_bonus'] ?? 0),
+    'Thưởng chuyên cần' => (float)($s['attendance_bonus'] ?? 0),
 ];
 $allowanceTotal = array_sum($allowanceItems);
-$otTotal = (float)($selectedSlip['total_ot_amount'] ?? 0);
-$deductionTotal = (float)($selectedSlip['si_employee'] ?? 0)
-    + (float)($selectedSlip['pit_amount'] ?? 0)
-    + (float)($selectedSlip['other_deductions'] ?? 0);
+
+// ── OT ───────────────────────────────────────────────────────────────
+$otTotal = (float)($s['total_ot_amount'] ?? 0);
+
+// ── Khoản cộng thêm ──────────────────────────────────────────────────
+$nightShiftBonus = (float)($s['night_shift_bonus'] ?? 0);
+$kpiBonus        = (float)($s['kpi_bonus'] ?? 0);
+$otherIncome     = (float)($s['other_income'] ?? 0);
+
+// ── Khoản trừ ────────────────────────────────────────────────────────
+$siEmployee    = (float)($s['si_employee'] ?? 0);
+$pitAmount     = (float)($s['pit_amount'] ?? 0);
+$otherDeduct   = (float)($s['other_deductions'] ?? 0);
+$lateDeduction = (float)($s['late_early_deduction'] ?? $s['late_deduction'] ?? 0);
+$kpiDeduction  = (float)($s['kpi_deduction'] ?? 0);
+$cashAdvance   = (float)($s['cash_advance'] ?? 0);
+
+$deductionTotal = $siEmployee + $pitAmount + $otherDeduct + $lateDeduction + $kpiDeduction;
 ?>
 
 <!-- I. Thông tin nhân viên -->
@@ -97,10 +105,10 @@ $deductionTotal = (float)($selectedSlip['si_employee'] ?? 0)
     <div class="card-body p-4">
         <div class="fw-bold mb-2">I. Thông tin nhân viên</div>
         <div class="list-compact">
-            <div class="d-flex justify-content-between"><span class="label-muted">Họ tên</span><span class="fw-semibold"><?= e($selectedSlip['full_name'] ?? '') ?></span></div>
-            <div class="d-flex justify-content-between"><span class="label-muted">Mã NV</span><span><?= e($selectedSlip['employee_code'] ?? '') ?></span></div>
-            <div class="d-flex justify-content-between"><span class="label-muted">Bộ phận</span><span><?= e($selectedSlip['department_name'] ?? '') ?></span></div>
-            <div class="d-flex justify-content-between"><span class="label-muted">Kỳ lương</span><span><?= e(formatDate($selectedSlip['period_from'])) ?> – <?= e(formatDate($selectedSlip['period_to'])) ?></span></div>
+            <div class="d-flex justify-content-between"><span class="label-muted">Họ tên</span><span class="fw-semibold"><?= e($s['full_name'] ?? '') ?></span></div>
+            <div class="d-flex justify-content-between"><span class="label-muted">Mã NV</span><span><?= e($s['employee_code'] ?? '') ?></span></div>
+            <div class="d-flex justify-content-between"><span class="label-muted">Bộ phận</span><span><?= e($s['department_name'] ?? '') ?></span></div>
+            <div class="d-flex justify-content-between"><span class="label-muted">Kỳ lương</span><span><?= e(formatDate($s['period_from'])) ?> – <?= e(formatDate($s['period_to'])) ?></span></div>
         </div>
     </div>
 </div>
@@ -110,14 +118,22 @@ $deductionTotal = (float)($selectedSlip['si_employee'] ?? 0)
     <div class="card-body p-4">
         <div class="fw-bold mb-2">II. Công &amp; Lương cơ bản</div>
         <div class="list-compact">
-            <div class="d-flex justify-content-between"><span class="label-muted">Ngày công thực tế / Chuẩn</span><span><?= (int)($selectedSlip['actual_work_days'] ?? 0) ?> / <?= (int)($selectedSlip['standard_work_days'] ?? 0) ?></span></div>
-            <div class="d-flex justify-content-between"><span class="label-muted">Lương cơ bản (gross)</span><span><?= e(formatCurrency($selectedSlip['basic_salary'] ?? 0)) ?></span></div>
-            <div class="d-flex justify-content-between"><span class="label-muted">Lương cơ bản thực nhận</span><span class="fw-bold"><?= e(formatCurrency($selectedSlip['basic_salary_received'] ?? 0)) ?></span></div>
+            <?php if (isset($s['actual_workdays']) || isset($s['working_days_standard'])): ?>
+            <div class="d-flex justify-content-between">
+                <span class="label-muted">Ngày công thực tế / Chuẩn</span>
+                <span><?= number_format((float)($s['actual_workdays'] ?? 0), 1) ?> / <?= (int)($s['working_days_standard'] ?? 0) ?></span>
+            </div>
+            <?php endif; ?>
+            <?php if ((float)($s['basic_salary'] ?? 0) > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">Lương cơ bản (gross)</span><span><?= e(formatCurrency($s['basic_salary'])) ?></span></div>
+            <?php endif; ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">Lương cơ bản thực nhận</span><span class="fw-bold"><?= e(formatCurrency($s['basic_salary_received'] ?? 0)) ?></span></div>
         </div>
     </div>
 </div>
 
 <!-- III. Trợ cấp & Thưởng -->
+<?php if ($allowanceTotal > 0 || $nightShiftBonus > 0 || $kpiBonus > 0 || $otherIncome > 0): ?>
 <div class="card mobile-card mb-3">
     <div class="card-body p-4">
         <div class="fw-bold mb-2">III. Trợ cấp &amp; Thưởng</div>
@@ -127,10 +143,20 @@ $deductionTotal = (float)($selectedSlip['si_employee'] ?? 0)
             <div class="d-flex justify-content-between"><span class="label-muted"><?= e($aLabel) ?></span><span><?= e(formatCurrency($aVal)) ?></span></div>
             <?php endif; ?>
             <?php endforeach; ?>
-            <div class="d-flex justify-content-between border-top pt-2 mt-1"><span class="fw-bold">Tổng trợ cấp</span><span class="fw-bold text-primary"><?= e(formatCurrency($allowanceTotal)) ?></span></div>
+            <?php if ($nightShiftBonus > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">🌙 Phụ trội làm đêm</span><span><?= e(formatCurrency($nightShiftBonus)) ?></span></div>
+            <?php endif; ?>
+            <?php if ($kpiBonus > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">🎯 Thưởng KPI</span><span><?= e(formatCurrency($kpiBonus)) ?></span></div>
+            <?php endif; ?>
+            <?php if ($otherIncome > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">Thu nhập khác</span><span><?= e(formatCurrency($otherIncome)) ?></span></div>
+            <?php endif; ?>
+            <div class="d-flex justify-content-between border-top pt-2 mt-1"><span class="fw-bold">Tổng trợ cấp</span><span class="fw-bold text-primary"><?= e(formatCurrency($allowanceTotal + $nightShiftBonus + $kpiBonus + $otherIncome)) ?></span></div>
         </div>
     </div>
 </div>
+<?php endif; ?>
 
 <!-- IV. OT -->
 <?php if ($otTotal > 0): ?>
@@ -138,14 +164,23 @@ $deductionTotal = (float)($selectedSlip['si_employee'] ?? 0)
     <div class="card-body p-4">
         <div class="fw-bold mb-2">IV. Làm thêm giờ (OT)</div>
         <div class="list-compact">
-            <?php if ((float)($selectedSlip['ot_weekday'] ?? 0) > 0): ?>
-            <div class="d-flex justify-content-between"><span class="label-muted">OT ngày thường</span><span><?= e(formatCurrency($selectedSlip['ot_weekday'])) ?></span></div>
+            <?php if ((float)($s['ot_weekday_amount'] ?? $s['ot_weekday'] ?? 0) > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">OT ngày thường</span><span><?= e(formatCurrency($s['ot_weekday_amount'] ?? $s['ot_weekday'] ?? 0)) ?></span></div>
             <?php endif; ?>
-            <?php if ((float)($selectedSlip['ot_weekend'] ?? 0) > 0): ?>
-            <div class="d-flex justify-content-between"><span class="label-muted">OT cuối tuần</span><span><?= e(formatCurrency($selectedSlip['ot_weekend'])) ?></span></div>
+            <?php if ((float)($s['ot_weekend_amount'] ?? $s['ot_weekend'] ?? 0) > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">OT cuối tuần</span><span><?= e(formatCurrency($s['ot_weekend_amount'] ?? $s['ot_weekend'] ?? 0)) ?></span></div>
             <?php endif; ?>
-            <?php if ((float)($selectedSlip['ot_holiday'] ?? 0) > 0): ?>
-            <div class="d-flex justify-content-between"><span class="label-muted">OT ngày lễ</span><span><?= e(formatCurrency($selectedSlip['ot_holiday'])) ?></span></div>
+            <?php if ((float)($s['ot_holiday_amount'] ?? $s['ot_holiday'] ?? 0) > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">OT ngày lễ</span><span><?= e(formatCurrency($s['ot_holiday_amount'] ?? $s['ot_holiday'] ?? 0)) ?></span></div>
+            <?php endif; ?>
+            <?php if ((float)($s['ot_night_weekday_amount'] ?? 0) > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">🌙 OT đêm thường</span><span><?= e(formatCurrency($s['ot_night_weekday_amount'])) ?></span></div>
+            <?php endif; ?>
+            <?php if ((float)($s['ot_night_weekend_amount'] ?? 0) > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">🌙 OT đêm cuối tuần</span><span><?= e(formatCurrency($s['ot_night_weekend_amount'])) ?></span></div>
+            <?php endif; ?>
+            <?php if ((float)($s['ot_night_holiday_amount'] ?? 0) > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">🌙 OT đêm ngày lễ</span><span><?= e(formatCurrency($s['ot_night_holiday_amount'])) ?></span></div>
             <?php endif; ?>
             <div class="d-flex justify-content-between border-top pt-2 mt-1"><span class="fw-bold">Tổng OT</span><span class="fw-bold text-primary"><?= e(formatCurrency($otTotal)) ?></span></div>
         </div>
@@ -158,12 +193,18 @@ $deductionTotal = (float)($selectedSlip['si_employee'] ?? 0)
     <div class="card-body p-4">
         <div class="fw-bold mb-2">V. Các khoản trừ</div>
         <div class="list-compact">
-            <div class="d-flex justify-content-between"><span class="label-muted">BHXH nhân viên</span><span><?= e(formatCurrency($selectedSlip['si_employee'] ?? 0)) ?></span></div>
-            <div class="d-flex justify-content-between"><span class="label-muted">Thuế TNCN</span><span><?= e(formatCurrency($selectedSlip['pit_amount'] ?? 0)) ?></span></div>
-            <?php if ((float)($selectedSlip['other_deductions'] ?? 0) > 0): ?>
-            <div class="d-flex justify-content-between"><span class="label-muted">Khác</span><span><?= e(formatCurrency($selectedSlip['other_deductions'])) ?></span></div>
+            <div class="d-flex justify-content-between"><span class="label-muted">BHXH nhân viên</span><span><?= e(formatCurrency($siEmployee)) ?></span></div>
+            <div class="d-flex justify-content-between"><span class="label-muted">Thuế TNCN</span><span><?= e(formatCurrency($pitAmount)) ?></span></div>
+            <?php if ($lateDeduction > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted text-danger">⚠️ Trừ đi muộn/về sớm</span><span class="text-danger">-<?= e(formatCurrency($lateDeduction)) ?></span></div>
             <?php endif; ?>
-            <div class="d-flex justify-content-between border-top pt-2 mt-1"><span class="fw-bold">Tổng khấu trừ</span><span class="fw-bold text-danger"><?= e(formatCurrency($deductionTotal)) ?></span></div>
+            <?php if ($kpiDeduction > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted text-danger">⚠️ Trừ KPI</span><span class="text-danger">-<?= e(formatCurrency($kpiDeduction)) ?></span></div>
+            <?php endif; ?>
+            <?php if ($otherDeduct > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">Khác</span><span><?= e(formatCurrency($otherDeduct)) ?></span></div>
+            <?php endif; ?>
+            <div class="d-flex justify-content-between border-top pt-2 mt-1"><span class="fw-bold">Tổng khấu trừ</span><span class="fw-bold text-danger">-<?= e(formatCurrency($deductionTotal)) ?></span></div>
         </div>
     </div>
 </div>
@@ -173,27 +214,47 @@ $deductionTotal = (float)($selectedSlip['si_employee'] ?? 0)
     <div class="card-body p-4 bg-success-subtle">
         <div class="fw-bold mb-2">VI. Thực nhận</div>
         <div class="list-compact">
-            <div class="d-flex justify-content-between"><span class="label-muted">Gross salary</span><span><?= e(formatCurrency($selectedSlip['gross_salary'] ?? 0)) ?></span></div>
-            <div class="summary-item border border-success-subtle">
-                <div class="label-muted">NET (thực nhận)</div>
-                <div class="payslip-amount"><?= e(formatCurrency($selectedSlip['net_salary'] ?? 0)) ?></div>
+            <?php if ((float)($s['gross_salary'] ?? 0) > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">Gross salary</span><span><?= e(formatCurrency($s['gross_salary'])) ?></span></div>
+            <?php endif; ?>
+            <div class="summary-item border border-success-subtle bg-white rounded mb-2">
+                <div class="label-muted small">NET (thực nhận)</div>
+                <div class="payslip-amount"><?= e(formatCurrency($s['net_salary'] ?? 0)) ?></div>
             </div>
-            <?php if ((float)($selectedSlip['cash_advance'] ?? 0) > 0): ?>
-            <div class="d-flex justify-content-between"><span class="label-muted">Ứng trước</span><span class="text-danger"><?= e(formatCurrency($selectedSlip['cash_advance'])) ?></span></div>
+            <?php if ($cashAdvance > 0): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">Ứng trước</span><span class="text-danger">-<?= e(formatCurrency($cashAdvance)) ?></span></div>
             <?php endif; ?>
-            <div class="d-flex justify-content-between"><span class="fw-bold">Nhận chuyển khoản</span><span class="fw-bold"><?= e(formatCurrency($selectedSlip['bank_transfer'] ?? 0)) ?></span></div>
-            <?php if (!empty($selectedSlip['bank_name']) || !empty($selectedSlip['bank_account'])): ?>
-            <div class="d-flex justify-content-between"><span class="label-muted">Ngân hàng</span><span><?= e(($selectedSlip['bank_name'] ?? '') . ' ' . ($selectedSlip['bank_account'] ?? '')) ?></span></div>
+            <div class="d-flex justify-content-between border-top pt-2 mt-1">
+                <span class="fw-bold">Nhận chuyển khoản</span>
+                <span class="fw-bold text-success"><?= e(formatCurrency($s['bank_transfer'] ?? $s['net_salary'] ?? 0)) ?></span>
+            </div>
+            <?php if (!empty($s['bank_name']) || !empty($s['bank_account'])): ?>
+            <div class="d-flex justify-content-between"><span class="label-muted">Ngân hàng</span><span><?= e(trim(($s['bank_name'] ?? '') . ' ' . ($s['bank_account'] ?? ''))) ?></span></div>
             <?php endif; ?>
-            <?php if (!empty($selectedSlip['remark'])): ?>
-            <div class="d-flex justify-content-between"><span class="label-muted">Ghi chú</span><span><?= e($selectedSlip['remark']) ?></span></div>
+            <?php if (!empty($s['remark'])): ?>
+            <div class="mt-2 p-2 bg-white rounded border small text-muted"><?= nl2br(e($s['remark'])) ?></div>
             <?php endif; ?>
         </div>
+
+        <!-- Kiểm tra công thức -->
+        <?php
+        $calcNet = (float)($s['basic_salary_received'] ?? 0)
+            + $allowanceTotal + $nightShiftBonus + $kpiBonus + $otherIncome
+            + $otTotal
+            - $deductionTotal;
+        $dbNet = (float)($s['net_salary'] ?? 0);
+        $diff  = abs($calcNet - $dbNet);
+        ?>
+        <?php if ($diff > 1): ?>
+        <div class="alert alert-warning py-2 mt-2 small mb-0">
+            ⚠️ Lưu ý: Tổng các khoản hiển thị (<?= e(formatCurrency($calcNet)) ?>) có thể chênh lệch do một số khoản điều chỉnh không được liệt kê chi tiết.
+        </div>
+        <?php endif; ?>
     </div>
 </div>
 
 <div class="mb-3">
-    <a href="/erp/modules/payroll/slip_print.php?id=<?= (int)$selectedSlip['id'] ?>" target="_blank" class="btn btn-outline-secondary w-100">
+    <a href="/erp/modules/payroll/slip_print.php?id=<?= (int)$s['id'] ?>" target="_blank" class="btn btn-outline-secondary w-100">
         <i class="fas fa-print me-2"></i>In / Xuất PDF
     </a>
 </div>
