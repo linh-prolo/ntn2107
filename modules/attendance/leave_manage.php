@@ -11,6 +11,65 @@ $pdo = getDBConnection();
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? '')) {
     $id = (int)$_POST['request_id'];
     $action = $_POST['action'] ?? ''; // approved / rejected
+
+    // ── Tạo đơn thủ công ──────────────────────────────────────────────────
+    if ($action === 'manual_create') {
+        requireRole('director', 'manager', 'accountant', 'production');
+
+        $targetUserId = (int)($_POST['target_user_id'] ?? 0);
+        $leaveType    = $_POST['leave_type'] ?? '';
+        $startDate    = $_POST['start_date'] ?? '';
+        $endDate      = $_POST['end_date'] ?? '';
+        $reason       = trim($_POST['reason'] ?? '');
+        $autoApprove  = isset($_POST['auto_approve']);
+
+        $validTypes = ['annual', 'sick', 'unpaid', 'other'];
+        $errors = [];
+        if ($targetUserId <= 0) $errors[] = 'Vui lòng chọn nhân viên.';
+        if (!in_array($leaveType, $validTypes, true)) $errors[] = 'Loại nghỉ không hợp lệ.';
+        if (!$startDate || !$endDate) $errors[] = 'Vui lòng chọn ngày bắt đầu và kết thúc.';
+        if ($startDate && $endDate && $startDate > $endDate) $errors[] = 'Ngày kết thúc phải sau ngày bắt đầu.';
+        if ($reason === '') $errors[] = 'Vui lòng nhập lý do.';
+
+        $totalDays = 0;
+        if (empty($errors) && $startDate && $endDate) {
+            $d1 = new DateTime($startDate);
+            $d2 = new DateTime($endDate);
+            $totalDays = (int)$d2->diff($d1)->days + 1;
+        }
+
+        if (empty($errors)) {
+            try {
+                $status    = $autoApprove ? 'approved' : 'pending';
+                $approvedBy = $autoApprove ? $user['id'] : null;
+                $approvedAt = $autoApprove ? date('Y-m-d H:i:s') : null;
+
+                $pdo->prepare("
+                    INSERT INTO leave_requests (user_id, leave_type, start_date, end_date, total_days, reason, status, approved_by, approved_at, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                ")->execute([$targetUserId, $leaveType, $startDate, $endDate, $totalDays, $reason, $status, $approvedBy, $approvedAt]);
+
+                $newId = (int)$pdo->lastInsertId();
+
+                // Thông báo cho nhân viên
+                $statusTxt = $autoApprove ? 'đã được duyệt ngay' : 'đang chờ duyệt';
+                $typeLabels = ['annual' => 'Phép năm', 'sick' => 'Ốm', 'unpaid' => 'Không lương', 'other' => 'Khác'];
+                $typeTxt = $typeLabels[$leaveType] ?? $leaveType;
+                $msg = "📋 Đơn nghỉ phép ({$typeTxt}) từ " . date('d/m/Y', strtotime($startDate)) . " đến " . date('d/m/Y', strtotime($endDate)) . " ({$totalDays} ngày) được tạo bởi quản lý, {$statusTxt}.";
+                $pdo->prepare("INSERT INTO notifications (user_id, title, message, type, reference_id) VALUES (?, 'Đơn nghỉ phép được tạo thủ công', ?, 'leave_request', ?)")
+                    ->execute([$targetUserId, $msg, $newId]);
+
+                setFlash('success', '✅ Đã tạo đơn nghỉ phép thủ công thành công.');
+            } catch (Throwable $e) {
+                setFlash('danger', '❌ Không thể tạo đơn: ' . $e->getMessage());
+            }
+        } else {
+            setFlash('danger', '❌ ' . implode(' ', $errors));
+        }
+        header('Location: /erp/modules/attendance/leave_manage.php?filter=' . ($_GET['filter'] ?? 'pending'));
+        exit();
+    }
+
     $reason = trim($_POST['reject_reason'] ?? '');
 
     // ── Giám đốc override đơn đã duyệt/từ chối ──
@@ -118,10 +177,21 @@ $stmt = $pdo->prepare("
         OR (r.name = 'accountant' AND ? >= 5)
       )
     ORDER BY lr.created_at DESC
-    LIMIT 50
+    LIMIT 200
 ");
 $stmt->execute([$filter, $filter, $user['id'], $myLevel, $myLevel, $myLevel, $myLevel]);
 $requests = $stmt->fetchAll();
+
+// Lấy danh sách nhân viên cho form tạo thủ công
+$empStmt = $pdo->query("
+    SELECT u.id, u.full_name, u.employee_code, r.name AS role, d.name AS department_name
+    FROM users u
+    JOIN roles r ON u.role_id = r.id
+    LEFT JOIN departments d ON u.department_id = d.id
+    WHERE u.is_active = 1
+    ORDER BY u.full_name ASC
+");
+$allEmployees = $empStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $csrf = generateCSRF();
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/header.php';
@@ -129,7 +199,12 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 ?>
 <div class="main-content">
 <div class="container-fluid py-4">
-    <h4 class="mb-4">📋 Duyệt đơn nghỉ phép</h4>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="mb-0">📋 Duyệt đơn nghỉ phép</h4>
+        <button class="btn btn-primary btn-sm" onclick="showManualCreate()">
+            <i class="fas fa-plus me-1"></i> Tạo đơn thủ công
+        </button>
+    </div>
     <?php showFlash(); ?>
 
     <!-- Filter -->
@@ -264,6 +339,81 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
         </div>
     </div>
 </div>
+
+<!-- Modal Tạo đơn thủ công -->
+<div class="modal fade" id="manualCreateModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST" id="manualCreateForm">
+                <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+                <input type="hidden" name="request_id" value="0">
+                <input type="hidden" name="action" value="manual_create">
+                <div class="modal-header bg-primary bg-opacity-10">
+                    <h6 class="modal-title fw-bold"><i class="fas fa-plus-circle me-2 text-primary"></i>Tạo đơn nghỉ phép thủ công</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Nhân viên <span class="text-danger">*</span></label>
+                            <select name="target_user_id" id="manualUserId" class="form-select" required>
+                                <option value="">-- Chọn nhân viên --</option>
+                                <?php foreach ($allEmployees as $emp): ?>
+                                <option value="<?= (int)$emp['id'] ?>">
+                                    <?= htmlspecialchars($emp['full_name']) ?>
+                                    (<?= htmlspecialchars($emp['employee_code'] ?? '') ?>)
+                                    <?= $emp['department_name'] ? '— ' . htmlspecialchars($emp['department_name']) : '' ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Loại nghỉ <span class="text-danger">*</span></label>
+                            <select name="leave_type" class="form-select" required>
+                                <option value="annual">📅 Phép năm</option>
+                                <option value="sick">🤒 Nghỉ ốm</option>
+                                <option value="unpaid">💸 Không lương</option>
+                                <option value="other">📋 Khác</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Trạng thái</label>
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" name="auto_approve" id="autoApproveCheck" checked>
+                                <label class="form-check-label" for="autoApproveCheck">Duyệt ngay (không cần chờ)</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Từ ngày <span class="text-danger">*</span></label>
+                            <input type="date" name="start_date" id="manualStartDate" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Đến ngày <span class="text-danger">*</span></label>
+                            <input type="date" name="end_date" id="manualEndDate" class="form-control" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Lý do <span class="text-danger">*</span></label>
+                            <textarea name="reason" class="form-control" rows="3" required placeholder="Nhập lý do nghỉ phép..."></textarea>
+                        </div>
+                        <div class="col-12">
+                            <div class="alert alert-info py-2 mb-0" id="manualDaysPreview" style="display:none;">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Số ngày nghỉ: <strong id="manualDaysCount">0</strong> ngày
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-primary fw-bold">
+                        <i class="fas fa-save me-1"></i>Tạo đơn
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 function showRejectForm(id) {
     document.getElementById('rejectId').value = id;
@@ -276,5 +426,26 @@ function showOverrideLeave(id, empName) {
     document.querySelector('#overrideLeaveModal textarea').value = '';
     new bootstrap.Modal(document.getElementById('overrideLeaveModal')).show();
 }
+
+function showManualCreate() {
+    new bootstrap.Modal(document.getElementById('manualCreateModal')).show();
+}
+
+// Tính số ngày khi chọn ngày
+function calcManualDays() {
+    const s = document.getElementById('manualStartDate').value;
+    const e = document.getElementById('manualEndDate').value;
+    const preview = document.getElementById('manualDaysPreview');
+    const count   = document.getElementById('manualDaysCount');
+    if (s && e && s <= e) {
+        const diff = Math.round((new Date(e) - new Date(s)) / 86400000) + 1;
+        count.textContent = diff;
+        preview.style.display = '';
+    } else {
+        preview.style.display = 'none';
+    }
+}
+document.getElementById('manualStartDate').addEventListener('change', calcManualDays);
+document.getElementById('manualEndDate').addEventListener('change', calcManualDays);
 </script>
 <?php include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/footer.php'; ?>
