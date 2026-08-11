@@ -29,6 +29,7 @@ $categoryIds = array_map(static fn(array $row): int => (int)$row['id'], $categor
 $filterMonth = preg_match('/^\d{4}-\d{2}$/', $_GET['month'] ?? '') ? $_GET['month'] : date('Y-m');
 $filterCategory = (int)($_GET['category_id'] ?? 0);
 $filterStatus = trim($_GET['status'] ?? '');
+$filterPayment = trim($_GET['payment_status'] ?? '');
 $allowedTabs = ['mine', 'pending', 'history', 'categories'];
 $activeTab = in_array($_GET['tab'] ?? 'mine', $allowedTabs, true) ? (string)($_GET['tab'] ?? 'mine') : 'mine';
 if ($activeTab === 'pending' && !$canApprove) {
@@ -38,18 +39,22 @@ if ($activeTab === 'categories' && !$canManageCategories) {
     $activeTab = 'mine';
 }
 
-$expensePageUrl = static function (array $overrides = []) use ($filterMonth, $filterCategory, $filterStatus, $activeTab): string {
+$expensePageUrl = static function (array $overrides = []) use ($filterMonth, $filterCategory, $filterStatus, $filterPayment, $activeTab): string {
     $params = [
         'month' => $overrides['month'] ?? $filterMonth,
         'tab' => $overrides['tab'] ?? $activeTab,
     ];
     $categoryId = $overrides['category_id'] ?? $filterCategory;
     $status = $overrides['status'] ?? $filterStatus;
+    $paymentStatus = $overrides['payment_status'] ?? $filterPayment;
     if ((int)$categoryId > 0) {
         $params['category_id'] = (int)$categoryId;
     }
     if ($status !== '') {
         $params['status'] = (string)$status;
+    }
+    if ($paymentStatus !== '') {
+        $params['payment_status'] = (string)$paymentStatus;
     }
     if (!empty($overrides['edit_id'])) {
         $params['edit_id'] = (int)$overrides['edit_id'];
@@ -376,6 +381,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect($expensePageUrl(['tab' => 'history']));
     }
 
+    if ($action === 'edit_invoice') {
+        if (!$canManageCategories) {
+            setFlash('danger', 'Bạn không có quyền thực hiện thao tác này.');
+            redirect($expensePageUrl(['tab' => $activeTab]));
+        }
+
+        $expenseId = (int)($_POST['expense_id'] ?? 0);
+        $hasInvoice = !empty($_POST['has_invoice']) ? 1 : 0;
+        $invoiceNo = trim($_POST['invoice_no'] ?? '') ?: null;
+        $invoiceDate = trim($_POST['invoice_date'] ?? '') ?: null;
+        $invoiceCompany = trim($_POST['invoice_company'] ?? '') ?: null;
+        $redirectTab = trim($_POST['redirect_tab'] ?? 'history');
+        if (!in_array($redirectTab, $allowedTabs, true)) {
+            $redirectTab = 'history';
+        }
+
+        $expense = $findExpense($expenseId);
+        if (!$expense) {
+            setFlash('danger', 'Không tìm thấy đề xuất.');
+        } else {
+            $invoiceError = null;
+            if ($hasInvoice && $invoiceDate !== null && !$isValidDate($invoiceDate)) {
+                $invoiceError = 'Ngày hoá đơn không hợp lệ.';
+            }
+            if ($invoiceError) {
+                setFlash('danger', $invoiceError);
+            } else {
+                if (!$hasInvoice) {
+                    $invoiceNo = null;
+                    $invoiceDate = null;
+                    $invoiceCompany = null;
+                }
+                $pdo->prepare("UPDATE expense_requests SET has_invoice = ?, invoice_no = ?, invoice_date = ?, invoice_company = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+                    ->execute([$hasInvoice, $invoiceNo, $invoiceDate, $invoiceCompany, $expenseId]);
+                setFlash('success', 'Đã cập nhật thông tin hoá đơn.');
+            }
+        }
+        redirect($expensePageUrl(['tab' => $redirectTab]));
+    }
+
     if ($errors) {
         flashOldInput($_POST);
         $oldInputWasFlashed = true;
@@ -465,6 +510,8 @@ $expenses = fetchAllSafe(
      LEFT JOIN expense_payments ep ON ep.expense_id = er.id
      WHERE " . implode(' AND ', $baseWhere) . "
      GROUP BY er.id
+     " . ($activeTab === 'history' && $filterPayment === 'paid' ? 'HAVING COALESCE(paid_amount, 0) >= er.amount' : '') .
+     ($activeTab === 'history' && $filterPayment === 'unpaid' ? 'HAVING COALESCE(paid_amount, 0) < er.amount' : '') . "
      ORDER BY er.expense_date DESC, er.id DESC",
     $params
 );
@@ -650,7 +697,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <div class="col-md-2">
                             <input type="month" name="month" class="form-control form-control-sm" value="<?= e($filterMonth) ?>">
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <select name="category_id" class="form-select form-select-sm">
                                 <option value="">-- Loại chi phí --</option>
                                 <?php foreach ($categories as $category): ?>
@@ -658,7 +705,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <select name="status" class="form-select form-select-sm">
                                 <option value="">-- Trạng thái --</option>
                                 <option value="draft" <?= $filterStatus === 'draft' ? 'selected' : '' ?>>Nháp</option>
@@ -667,9 +714,21 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <option value="rejected" <?= $filterStatus === 'rejected' ? 'selected' : '' ?>>Từ chối</option>
                             </select>
                         </div>
+                        <?php if ($activeTab === 'history'): ?>
+                        <div class="col-md-2">
+                            <select name="payment_status" class="form-select form-select-sm">
+                                <option value="">-- Thanh toán --</option>
+                                <option value="paid" <?= $filterPayment === 'paid' ? 'selected' : '' ?>>Đã thanh toán</option>
+                                <option value="unpaid" <?= $filterPayment === 'unpaid' ? 'selected' : '' ?>>Chưa thanh toán</option>
+                            </select>
+                        </div>
+                        <?php endif; ?>
+                        <div class="col-md-2">
+                            <input type="text" id="searchExpense" class="form-control form-control-sm" placeholder="Tìm số phiếu, mục đích, nhà cung cấp...">
+                        </div>
                         <div class="col-auto">
                             <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-filter me-1"></i>Lọc</button>
-                            <a href="/erp/<?= e($expensePageUrl(['status' => '', 'category_id' => 0])) ?>" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+                            <a href="/erp/<?= e($expensePageUrl(['status' => '', 'category_id' => 0, 'payment_status' => ''])) ?>" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
                         </div>
                     </form>
                 </div>
@@ -823,9 +882,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <thead class="table-dark">
                             <tr>
                                 <th>Số phiếu</th>
-                                <th>Ngày</th>
-                                <th>Loại</th>
+                                <th>Ngày tạo</th>
+                                <th>Số HĐ</th>
+                                <th>Nhà cung cấp</th>
                                 <th>Mục đích</th>
+                                <th>Loại</th>
                                 <th class="text-end">Số tiền</th>
                                 <th>Trạng thái</th>
                                 <th>Thao tác</th>
@@ -833,7 +894,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         </thead>
                         <tbody>
                         <?php if (!$expenses): ?>
-                            <tr><td colspan="7" class="text-center text-muted py-4">Chưa có đề xuất chi phí nào.</td></tr>
+                            <tr><td colspan="9" class="text-center text-muted py-4">Chưa có đề xuất chi phí nào.</td></tr>
                         <?php else: ?>
                             <?php foreach ($expenses as $expense): ?>
                                 <?php
@@ -852,10 +913,21 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                     default => 'Nháp',
                                 };
                                 ?>
-                                <tr id="expense-<?= (int)$expense['id'] ?>">
+                                <tr id="expense-<?= (int)$expense['id'] ?>" class="expense-row"
+                                    data-search="<?= e(strtolower($expense['request_no'] . ' ' . $expense['purpose'] . ' ' . ($expense['invoice_company'] ?? ''))) ?>">
                                     <td class="fw-semibold text-primary"><?= e($expense['request_no']) ?></td>
                                     <td><?= e(formatDate($expense['expense_date'])) ?></td>
-                                    <td><?= e($expense['category_name']) ?></td>
+                                    <td>
+                                        <?php if (!empty($expense['invoice_no'])): ?>
+                                            <div><?= e($expense['invoice_no']) ?></div>
+                                            <?php if (!empty($expense['invoice_date'])): ?>
+                                                <div class="small text-muted"><?= e(formatDate($expense['invoice_date'])) ?></div>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <span class="text-muted">—</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= !empty($expense['invoice_company']) ? e($expense['invoice_company']) : '<span class="text-muted">—</span>' ?></td>
                                     <td>
                                         <div class="fw-semibold"><?= e($expense['purpose']) ?></div>
                                         <div class="small text-muted">Người đề xuất: <?= e($expense['requested_name']) ?></div>
@@ -877,6 +949,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                             </div>
                                         <?php endif; ?>
                                     </td>
+                                    <td><?= e($expense['category_name']) ?></td>
                                     <td class="text-end">
                                         <div class="fw-semibold"><?= e(formatCurrency($expense['amount'])) ?></div>
                                         <?php if ($paidAmount > 0): ?>
@@ -938,12 +1011,25 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                             <?php if (!empty($paymentsByExpense[(int)$expense['id']])): ?>
                                                 <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#payments-<?= (int)$expense['id'] ?>">Lịch sử TT</button>
                                             <?php endif; ?>
+                                            <?php if ($canManageCategories): ?>
+                                                <button type="button" class="btn btn-sm btn-outline-primary btn-edit-invoice"
+                                                    data-expense-id="<?= (int)$expense['id'] ?>"
+                                                    data-has-invoice="<?= (int)$expense['has_invoice'] ?>"
+                                                    data-invoice-no="<?= e($expense['invoice_no'] ?? '') ?>"
+                                                    data-invoice-date="<?= e($expense['invoice_date'] ?? '') ?>"
+                                                    data-invoice-company="<?= e($expense['invoice_company'] ?? '') ?>"
+                                                    data-tab="<?= e($activeTab) ?>"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#editInvoiceModal">
+                                                    <i class="fas fa-edit"></i> Sửa HĐ
+                                                </button>
+                                            <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
                                 <?php if (!empty($paymentsByExpense[(int)$expense['id']])): ?>
                                     <tr class="collapse" id="payments-<?= (int)$expense['id'] ?>">
-                                        <td colspan="7" class="bg-light">
+                                        <td colspan="9" class="bg-light">
                                             <div class="small fw-semibold mb-2">Lịch sử thanh toán</div>
                                             <div class="table-responsive">
                                                 <table class="table table-sm mb-0">
@@ -979,6 +1065,49 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 </div>
             </div>
         <?php endif; ?>
+    </div>
+</div>
+
+<div class="modal fade" id="editInvoiceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-edit me-2"></i>Sửa thông tin hoá đơn</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post">
+                <?= csrfInput() ?>
+                <input type="hidden" name="action" value="edit_invoice">
+                <input type="hidden" name="expense_id" id="editInvoiceExpenseId">
+                <input type="hidden" name="redirect_tab" id="editInvoiceRedirectTab">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="editInvoiceHasInvoice" name="has_invoice" value="1">
+                            <label class="form-check-label fw-semibold" for="editInvoiceHasInvoice">Có hoá đơn</label>
+                        </div>
+                    </div>
+                    <div id="editInvoiceFields">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Số hoá đơn</label>
+                            <input type="text" name="invoice_no" id="editInvoiceNo" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Ngày hoá đơn</label>
+                            <input type="date" name="invoice_date" id="editInvoiceDate" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Nhà cung cấp</label>
+                            <input type="text" name="invoice_company" id="editInvoiceCompany" class="form-control">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Lưu</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 
@@ -1051,6 +1180,50 @@ document.querySelectorAll('.btn-payment').forEach((button) => {
         document.getElementById('paymentRemainingText').textContent = 'Số tiền còn lại: ' + numericRemaining.toLocaleString('vi-VN') + ' ₫';
     });
 });
+
+document.querySelectorAll('.btn-edit-invoice').forEach((button) => {
+    button.addEventListener('click', () => {
+        const expenseId = button.getAttribute('data-expense-id') || '';
+        const hasInvoice = button.getAttribute('data-has-invoice') === '1';
+        const invoiceNo = button.getAttribute('data-invoice-no') || '';
+        const invoiceDate = button.getAttribute('data-invoice-date') || '';
+        const invoiceCompany = button.getAttribute('data-invoice-company') || '';
+        const tab = button.getAttribute('data-tab') || 'history';
+        document.getElementById('editInvoiceExpenseId').value = expenseId;
+        document.getElementById('editInvoiceRedirectTab').value = tab;
+        const chk = document.getElementById('editInvoiceHasInvoice');
+        chk.checked = hasInvoice;
+        document.getElementById('editInvoiceNo').value = invoiceNo;
+        document.getElementById('editInvoiceDate').value = invoiceDate;
+        document.getElementById('editInvoiceCompany').value = invoiceCompany;
+        document.getElementById('editInvoiceFields').classList.toggle('d-none', !hasInvoice);
+    });
+});
+
+document.getElementById('editInvoiceHasInvoice')?.addEventListener('change', function () {
+    document.getElementById('editInvoiceFields')?.classList.toggle('d-none', !this.checked);
+});
+
+(function () {
+    const searchInput = document.getElementById('searchExpense');
+    if (!searchInput) return;
+    searchInput.addEventListener('input', function () {
+        const q = this.value.toLowerCase().trim();
+        document.querySelectorAll('tbody tr.expense-row').forEach((row) => {
+            const text = (row.getAttribute('data-search') || '').toLowerCase();
+            const visible = q === '' || text.includes(q);
+            row.style.display = visible ? '' : 'none';
+            const rowId = row.id; // e.g. "expense-123"
+            if (rowId) {
+                const expenseNum = rowId.replace('expense-', '');
+                const payRow = document.getElementById('payments-' + expenseNum);
+                if (payRow) {
+                    payRow.style.display = visible ? '' : 'none';
+                }
+            }
+        });
+    });
+}());
 </script>
 <?php
 if ($oldInputWasFlashed || isset($_SESSION['_old_input'])) {
