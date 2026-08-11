@@ -148,7 +148,18 @@ $ethnicities = $pdo->query("SELECT name FROM ethnicities ORDER BY id")->fetchAll
 
 // ── Lấy dữ liệu lương ────────────────────────────────────────────────────
 $salaryRows = [];
+$salaryRowsApproved = [];
 if ($canViewSalary) {
+    $stmt = $pdo->prepare("
+        SELECT es.*, sc.component_name, sc.component_name_en, sc.component_type, sc.component_code
+        FROM employee_salaries es
+        LEFT JOIN salary_components sc ON es.component_id = sc.id
+        WHERE es.user_id = ? AND es.is_active = 1 AND es.approval_status = 'approved'
+        ORDER BY es.sort_order ASC, es.id ASC
+    ");
+    $stmt->execute([$targetId]);
+    $salaryRowsApproved = $stmt->fetchAll();
+
     $stmt = $pdo->prepare("
         SELECT es.*, sc.component_name, sc.component_name_en, sc.component_type, sc.component_code
         FROM employee_salaries es
@@ -159,7 +170,7 @@ if ($canViewSalary) {
     $stmt->execute([$targetId]);
     $salaryRows = $stmt->fetchAll();
 }
-$grossSalary = array_sum(array_column($salaryRows, 'amount'));
+$grossSalary = array_sum(array_column($salaryRowsApproved, 'amount'));
 
 $salaryComponents = [];
 if ($canEditSalary) {
@@ -806,9 +817,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <div class="row text-center g-3">
                         <?php
                         $totalEarning   = array_sum(array_map(fn($r) =>
-                            ($r['component_type'] ?? 'earning') !== 'deduction' ? $r['amount'] : 0, $salaryRows));
+                            ($r['component_type'] ?? 'earning') !== 'deduction' ? $r['amount'] : 0, $salaryRowsApproved));
                         $totalDeduction = array_sum(array_map(fn($r) =>
-                            ($r['component_type'] ?? 'earning') === 'deduction' ? $r['amount'] : 0, $salaryRows));
+                            ($r['component_type'] ?? 'earning') === 'deduction' ? $r['amount'] : 0, $salaryRowsApproved));
                         ?>
                         <div class="col-4">
                             <div class="small text-muted">💰 Tổng thu nhập</div>
