@@ -293,8 +293,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $expense = $findExpense($expenseId);
         if (!$expense) {
             setFlash('danger', 'Không tìm thấy đề xuất.');
-        } elseif ($expense['status'] !== 'draft') {
-            setFlash('danger', 'Chỉ có thể xoá đề xuất ở trạng thái nháp.');
+        } elseif (!in_array($expense['status'], ['draft', 'rejected'], true)) {
+            setFlash('danger', 'Chỉ có thể xoá đề xuất ở trạng thái nháp hoặc bị từ chối.');
         } elseif ((int)$expense['requested_by'] !== currentUserId()) {
             setFlash('danger', 'Bạn không có quyền xoá đề xuất này.');
         } else {
@@ -978,6 +978,17 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                                     <input type="hidden" name="action" value="delete">
                                                     <input type="hidden" name="id" value="<?= (int)$expense['id'] ?>">
                                                     <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Xoá đề xuất này?');">Xóa</button>
+                                                </form>
+                                            <?php endif; ?>
+
+                                            <?php if ($expense['status'] === 'rejected' && (int)$expense['requested_by'] === currentUserId()): ?>
+                                                <form method="post" class="d-inline">
+                                                    <?= csrfInput() ?>
+                                                    <input type="hidden" name="action" value="delete">
+                                                    <input type="hidden" name="id" value="<?= (int)$expense['id'] ?>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Xoá đề xuất bị từ chối này?');">
+                                                        <i class="fas fa-trash me-1"></i>Xóa
+                                                    </button>
                                                 </form>
                                             <?php endif; ?>
 
