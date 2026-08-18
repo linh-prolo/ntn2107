@@ -166,6 +166,7 @@ $sourceLabels = [
     'device'  => 'Máy ZKTeco',
     'machine' => 'Máy chấm',
     'manual'  => 'Thủ công',
+    'web'     => 'Web/App',
     'system'  => 'Hệ thống',
 ];
 
