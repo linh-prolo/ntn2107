@@ -389,7 +389,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
             if ($existing) {
                 if (!$existing['check_in']) {
                     $pdo->prepare("UPDATE attendance_logs
-                        SET check_in = ?, source = 'manual',
+                        SET check_in = ?, source = 'web',
                             check_in_ip = ?, check_in_lat = ?, check_in_lng = ?, check_in_location_flag = ?,
                             device_id = ?, same_device_alert = ?, check_in_photo = ?, is_late = ?, late_minutes = ?
                         WHERE id = ?")
@@ -398,7 +398,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
             } else {
                 $pdo->prepare("INSERT INTO attendance_logs
                     (user_id, check_in, work_date, source, check_in_ip, check_in_lat, check_in_lng, check_in_location_flag, device_id, same_device_alert, check_in_photo, is_late, late_minutes)
-                    VALUES (?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                    VALUES (?, ?, ?, 'web', ?, ?, ?, ?, ?, ?, ?, ?, ?)")
                     ->execute([$user['id'], $now, $today, $ip, $lat, $lng, $locationFlag, $deviceId, $sameDeviceAlert, $photoPath, $isLate, $lateMinutes]);
             }
         } catch (Throwable $e) {
@@ -406,10 +406,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
             try {
                 if ($existing) {
                     if (!$existing['check_in'])
-                        $pdo->prepare("UPDATE attendance_logs SET check_in = ?, source = 'manual' WHERE id = ?")
+                        $pdo->prepare("UPDATE attendance_logs SET check_in = ?, source = 'web' WHERE id = ?")
                             ->execute([$now, $existing['id']]);
                 } else {
-                    $pdo->prepare("INSERT INTO attendance_logs (user_id, check_in, work_date, source) VALUES (?, ?, ?, 'manual')")
+                    $pdo->prepare("INSERT INTO attendance_logs (user_id, check_in, work_date, source) VALUES (?, ?, ?, 'web')")
                         ->execute([$user['id'], $now, $today]);
                 }
             } catch (Throwable $e2) {

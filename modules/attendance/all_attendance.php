@@ -818,7 +818,13 @@ async function showDayDetail(userId, dateStr, empName) {
                                 : '<span class="text-muted small">—</span>'}</td></tr>
                         <tr><th>Nguồn</th>
                             <td><span class="badge bg-secondary">
-                                ${data.att?.source === 'machine' ? '🖥️ Máy chấm' : '✍️ Thủ công'}
+                                ${{
+                                    'machine': '🖥️ Máy chấm',
+                                    'device':  '🖥️ Máy ZKTeco',
+                                    'web':     '🌐 Web/App',
+                                    'manual':  '✍️ Thủ công',
+                                    'system':  '⚙️ Hệ thống',
+                                }[data.att?.source] ?? '✍️ Thủ công'}
                             </span></td></tr>
                         <tr><th>Vị trí vào</th><td>${formatLocationFlag(data.att?.check_in_location_flag)}</td></tr>
                         <tr><th>IP vào</th><td><code class="small">${data.att?.check_in_ip ? escapeHtml(data.att.check_in_ip) : '—'}</code></td></tr>
