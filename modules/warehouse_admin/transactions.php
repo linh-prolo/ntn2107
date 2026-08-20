@@ -36,6 +36,13 @@ $csrf = generateCSRF();
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/header.php';
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 ?>
+<!-- Tom Select CSS -->
+<link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+<style>
+.ts-wrapper.single .ts-control { border-radius: 0.375rem; }
+.ts-wrapper .ts-control input { min-width: 120px !important; }
+</style>
+
 <div class="main-content"><div class="container-fluid py-4">
     <h4 class="mb-3"><i class="fas fa-exchange-alt me-2 text-primary"></i>Nhập / Xuất vật tư</h4>
     <ul class="nav nav-tabs mb-3" id="tabWrap"><li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabRecord">Ghi nhận</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabHistory">Lịch sử</button></li></ul>
@@ -44,7 +51,20 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
             <div class="card border-0 shadow-sm"><div class="card-body">
                 <form id="formTxn" class="row g-3">
                     <input type="hidden" name="csrf_token" value="<?= e($csrf) ?>">
-                    <div class="col-md-4"><label class="form-label">Vật tư</label><select class="form-select" name="item_id" id="txnItem" required><option value="">-- Chọn --</option><?php foreach($items as $it): ?><option value="<?= (int)$it['id'] ?>" data-stock="<?= e((string)$stockByItem[(int)$it['id']]) ?>"><?= e($it['item_code'].' - '.$it['item_name']) ?></option><?php endforeach; ?></select><div class="form-text">Tồn hiện tại: <strong id="currentStock">0</strong></div></div>
+                    <div class="col-md-4">
+                        <label class="form-label">Vật tư</label>
+                        <select class="form-select" name="item_id" id="txnItem" required>
+                            <option value="">-- Chọn --</option>
+                            <?php foreach($items as $it): ?>
+                            <option value="<?= (int)$it['id'] ?>"
+                                    data-stock="<?= e((string)$stockByItem[(int)$it['id']]) ?>"
+                                    data-search="<?= e($it['item_code'].' '.$it['item_name']) ?>">
+                                <?= e($it['item_code'].' - '.$it['item_name']) ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div class="form-text">Tồn hiện tại: <strong id="currentStock">0</strong></div>
+                    </div>
                     <div class="col-md-2"><label class="form-label">Loại</label><select class="form-select" name="type" required><option value="import">Nhập</option><option value="export">Xuất</option></select></div>
                     <div class="col-md-2"><label class="form-label">Số lượng</label><input type="number" min="0.01" step="0.01" class="form-control" name="qty" required></div>
                     <div class="col-md-2"><label class="form-label">Ngày</label><input type="date" class="form-control" name="transacted_at" value="<?= e(date('Y-m-d')) ?>" required></div>
@@ -61,26 +81,58 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <div class="col-md-2"><select name="type" class="form-select form-select-sm"><option value="">-- Loại --</option><option value="import" <?= $type==='import'?'selected':'' ?>>Nhập</option><option value="export" <?= $type==='export'?'selected':'' ?>>Xuất</option></select></div>
                 <div class="col-auto"><button class="btn btn-sm btn-primary"><i class="fas fa-filter me-1"></i>Lọc</button></div>
             </form></div></div>
-            <div class="card border-0 shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-dark"><tr><th>Ngày</th><th>Mã vật tư</th><th>Tên vật tư</th><th>Loại</th><th class="text-end">SL</th><th>Số chứng từ</th><th>Người thực hiện</th><th>Ghi chú</th></tr></thead><tbody>
+            <div class="card border-0 shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-dark"><tr><th>Ngày</th><th>Mã vật tư</th><th>Tên vật tư</th><th>Loại</th><th>Số lượng</th><th>Chứng từ</th><th>Người thực hiện</th><th>Ghi chú</th></tr></thead><tbody>
             <?php if(!$history): ?><tr><td colspan="8" class="text-center text-muted py-4">Chưa có dữ liệu giao dịch</td></tr><?php endif; ?>
-            <?php foreach($history as $h): ?><tr><td><?= e(formatDate($h['transacted_at'])) ?></td><td><?= e($h['item_code']) ?></td><td><?= e($h['item_name']) ?></td><td><span class="badge bg-<?= $h['type']==='import'?'success':'danger' ?>"><?= $h['type']==='import'?'Nhập':'Xuất' ?></span></td><td class="text-end"><?= e(number_format((float)$h['qty'],2,',','.')) ?></td><td><?= e($h['ref_no']) ?></td><td><?= e($h['full_name']) ?></td><td><?= e($h['note']) ?></td></tr><?php endforeach; ?>
+            <?php foreach($history as $h): ?><tr><td><?= e(formatDate($h['transacted_at'])) ?></td><td><?= e($h['item_code']) ?></td><td><?= e($h['item_name']) ?></td><td><span class="badge bg-<?= $h['type']==='import'?'success':'warning text-dark' ?>"><?= $h['type']==='import'?'Nhập':'Xuất' ?></span></td><td><?= e(number_format((float)$h['qty'],2,',','.')) ?> <?= e($h['unit']) ?></td><td><?= e($h['ref_no'] ?? '') ?></td><td><?= e($h['full_name'] ?? '') ?></td><td><?= e($h['note'] ?? '') ?></td></tr><?php endforeach; ?>
             </tbody></table></div></div>
         </div>
     </div>
 </div></div>
+
+<!-- Tom Select JS -->
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
 <script>
 window.addEventListener('load', function() {
-    const selectItem = document.getElementById('txnItem');
     const currentStock = document.getElementById('currentStock');
 
-    if (selectItem) {
-        selectItem.addEventListener('change', function() {
-            if (currentStock) {
-                currentStock.textContent = Number(this.selectedOptions[0]?.dataset.stock || 0).toLocaleString('vi-VN');
+    // ── Tom Select cho ô Vật tư ──────────────────────────────────────────
+    const ts = new TomSelect('#txnItem', {
+        placeholder: 'Nhập mã hoặc tên vật tư...',
+        searchField: ['text', 'data-search'],   // tìm cả mã lẫn tên
+        // Tuỳ chỉnh: tìm theo cả field data-search đính kèm option
+        load: null,
+        render: {
+            option: function(data, escape) {
+                return '<div>' + escape(data.text) + '</div>';
+            },
+            item: function(data, escape) {
+                return '<div>' + escape(data.text) + '</div>';
             }
-        });
-    }
+        },
+        onChange: function(value) {
+            if (!value) {
+                if (currentStock) currentStock.textContent = '0';
+                return;
+            }
+            const opt = document.querySelector('#txnItem option[value="' + value + '"]');
+            if (currentStock && opt) {
+                currentStock.textContent = Number(opt.dataset.stock || 0).toLocaleString('vi-VN');
+            }
+        }
+    });
 
+    // Tuỳ chỉnh tìm kiếm: ưu tiên mã vật tư khớp đầu chuỗi
+    ts.settings.score = function(search) {
+        const score = this.getScoreFunction(search);
+        return function(item) {
+            const code = (item.text || '').split(' - ')[0].toLowerCase();
+            const q = search.toLowerCase();
+            // Nếu mã bắt đầu bằng từ khoá → tăng điểm
+            return score(item) + (code.startsWith(q) ? 1 : 0);
+        };
+    };
+
+    // ── Submit form ───────────────────────────────────────────────────────
     const formTxn = document.getElementById('formTxn');
     if (formTxn) {
         formTxn.addEventListener('submit', async function(e) {
