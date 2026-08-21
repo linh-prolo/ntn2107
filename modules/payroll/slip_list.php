@@ -42,7 +42,7 @@ $stmtSlips = $pdo->prepare("
     LEFT JOIN employee_profiles ep ON ep.user_id = u.id
     LEFT JOIN departments d ON u.department_id = d.id
     WHERE ps.period_id = ?
-    ORDER BY u.employee_code
+    ORDER BY CAST(u.employee_code AS UNSIGNED), u.employee_code
 ");
 $stmtSlips->execute([$periodId]);
 $slips = $stmtSlips->fetchAll();
