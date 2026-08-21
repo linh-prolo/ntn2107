@@ -57,7 +57,7 @@ $empParams = ["$viewYear-$viewMonth-01", "$viewYear-$viewMonth-01"];
 
 if ($filterDept) { $empSQL .= " AND u.department_id = ?"; $empParams[] = $filterDept; }
 if ($filterUser) { $empSQL .= " AND u.id = ?";            $empParams[] = $filterUser; }
-$empSQL .= " ORDER BY u.employee_code";
+$empSQL .= " ORDER BY CAST(u.employee_code AS UNSIGNED), u.employee_code";
 
 $empStmt = $pdo->prepare($empSQL);
 $empStmt->execute($empParams);
