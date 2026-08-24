@@ -159,7 +159,10 @@ if ($canViewSalary) {
     $stmt->execute([$targetId]);
     $salaryRows = $stmt->fetchAll();
 }
-$grossSalary = array_sum(array_column($salaryRows, 'amount'));
+$grossSalary = array_sum(array_map(
+    fn($r) => ($r['approval_status'] ?? 'pending') === 'approved' ? (int)$r['amount'] : 0,
+    $salaryRows
+));
 
 $salaryComponents = [];
 if ($canEditSalary) {

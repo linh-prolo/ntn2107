@@ -1371,17 +1371,19 @@ class PayrollEngine
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 
-        // Group by component_id: keep approved if available, else pending
+        // Group by component_id: only include approved entries
         $grouped = [];  // component_id => row
         $custom  = [];  // rows without component_id (custom entries)
 
         foreach ($rows as $r) {
 
+            // Skip unapproved entries
+            if (($r['approval_status'] ?? 'pending') !== 'approved') continue;
+
             if ($r['component_id']) {
 
                 $cid = (int)$r['component_id'];
 
-                // First occurrence is preferred (approved rows come first due to ORDER BY)
                 if (!isset($grouped[$cid])) {
 
                     $grouped[$cid] = $r;
