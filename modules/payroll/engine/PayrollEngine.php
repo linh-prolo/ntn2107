@@ -516,6 +516,8 @@ class PayrollEngine
 
             'paid_leave_days'            => $paidLeaveDays,
 
+            'holiday_leave_days'         => $otherPaidLeaveDays,
+
             'other_paid_leave_days'      => $otherPaidLeaveDays,
 
             'unpaid_leave_days'          => $unpaidLeaveDays,
