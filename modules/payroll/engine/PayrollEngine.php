@@ -384,9 +384,10 @@ class PayrollEngine
 
         $hasInsurance = (int)($profile['has_social_insurance'] ?? 0);
 
-        $siEmployee   = $hasInsurance ? round($basicSalary * self::SI_EMPLOYEE_RATE) : 0;
-
-        $siCompany    = $hasInsurance ? round($basicSalary * self::SI_COMPANY_RATE)  : 0;
+        // Căn cứ đóng BHXH: lương cơ bản + PC thâm niên + PC trách nhiệm
+        $siBase     = $basicSalary + $seniorityAllow + $responsibilityAllow;
+        $siEmployee = $hasInsurance ? round($siBase * self::SI_EMPLOYEE_RATE) : 0;
+        $siCompany  = $hasInsurance ? round($siBase * self::SI_COMPANY_RATE)  : 0;
 
 
 
@@ -491,7 +492,7 @@ class PayrollEngine
 
         if ($hasInsurance)
 
-            $remarkParts[] = "BHXH NV: -".number_format($siEmployee)." đ (10.5% × lương CB)";
+            $remarkParts[] = "BHXH NV: -".number_format($siEmployee)." đ (10.5% × lương CB + PC thâm niên + PC trách nhiệm)";
 
 
 
@@ -987,14 +988,10 @@ class PayrollEngine
 
 
 
-    // ─────────────────────────────────────────────────────────────────────
-
+    // ────────────────────────────────────────────────────────────────
     // PRIVATE: Số ngày lễ rơi vào Thứ 2–Thứ 7 (được hưởng lương)
-
     // Chỉ tính ngày lễ >= ngày vào làm của nhân viên (date_joined)
-
-    // ─────────────────────────────────────────────────────────────────────
-
+    // ────────────────────────────────────────────────────────────────
     private function getHolidayWorkDays(string $from, string $to, int $userId = 0): float
 
     {
