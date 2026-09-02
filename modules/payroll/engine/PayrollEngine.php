@@ -71,9 +71,19 @@ class PayrollEngine
 
 
 
-    public function calcWorkingDays(string $from, string $to): int
+    public function calcWorkingDays(string $from, string $to, ?string $resignationDate = null): int
 
     {
+
+        if ($resignationDate && $resignationDate < $from) return 0;
+
+        $to = $resignationDate && $resignationDate < $to ? $resignationDate : $to;
+
+        $stmt = $this->pdo->prepare(
+            "SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN ? AND ?"
+        );
+        $stmt->execute([$from, $to]);
+        $holidays = array_flip($stmt->fetchAll(PDO::FETCH_COLUMN));
 
         $count   = 0;
 
@@ -83,7 +93,7 @@ class PayrollEngine
 
         while ($current <= $end) {
 
-            if ((int)$current->format('N') !== 7) $count++;
+            if ((int)$current->format('N') !== 7 && !isset($holidays[$current->format('Y-m-d')])) $count++;
 
             $current->modify('+1 day');
 
@@ -149,7 +159,12 @@ class PayrollEngine
 
 
 
-        $workingDays = (int)$period['working_days'];
+        $employmentFrom = max($period['period_from'], $profile['date_joined'] ?? $period['period_from']);
+        $employmentTo   = min($period['period_to'], $profile['resignation_date'] ?? $period['period_to']);
+        $hasActivePeriod = $employmentFrom <= $employmentTo;
+        $workingDays = $hasActivePeriod
+            ? $this->calcWorkingDays($employmentFrom, $employmentTo)
+            : 0;
 
 
 
@@ -168,11 +183,15 @@ class PayrollEngine
 
         // ── Dữ liệu chấm công / nghỉ phép / OT ───────────────────────
 
-        $att = $this->getAttendanceData($userId, $period['period_from'], $period['period_to']);
-
-        $lv  = $this->getLeaveData($userId, $period['period_from'], $period['period_to']);
-
-        $ot  = $this->getOTData($userId, $period['period_from'], $period['period_to']);
+        $att = $hasActivePeriod
+            ? $this->getAttendanceData($userId, $employmentFrom, $employmentTo)
+            : $this->emptyAttendance();
+        $lv  = $hasActivePeriod
+            ? $this->getLeaveData($userId, $employmentFrom, $employmentTo)
+            : $this->emptyLeave();
+        $ot  = $hasActivePeriod
+            ? $this->getOTData($userId, $employmentFrom, $employmentTo)
+            : $this->emptyOT();
 
 
 
@@ -182,7 +201,7 @@ class PayrollEngine
 
         $otherPaidLeaveDays = (float)($lv['other_paid_leave_days']  ?? 0);
 
-        $holidayPaidDays    = $this->getHolidayWorkDays($period['period_from'], $period['period_to'], $userId);
+        $holidayPaidDays    = 0;
 
         $unpaidLeaveDays    = (float)($lv['unpaid_leave_days']      ?? 0);
 
@@ -221,7 +240,9 @@ class PayrollEngine
 
         // ── KPI ──────────────────────────────────────────────────────
 
-        $kpiData      = $this->getKpiData($userId, $period['period_from'], $period['period_to']);
+        $kpiData      = $hasActivePeriod
+            ? $this->getKpiData($userId, $employmentFrom, $employmentTo)
+            : [];
 
         $kpiDeduction = 0;
 
@@ -271,8 +292,10 @@ class PayrollEngine
 
 
         // ── Phụ trội làm đêm (30% theo giờ thực tế làm trong khung ca đêm) ─────
-        $isNightShift     = $this->isNightShiftWorker($userId, $period['period_from'], $period['period_to']);
-        $nightHoursActual = $this->getNightHoursWorked($userId, $period['period_from'], $period['period_to']);
+        $isNightShift     = $hasActivePeriod && $this->isNightShiftWorker($userId, $employmentFrom, $employmentTo);
+        $nightHoursActual = $hasActivePeriod
+            ? $this->getNightHoursWorked($userId, $employmentFrom, $employmentTo)
+            : 0;
         $nightShiftBonus  = $nightHoursActual > 0
             ? (int)round($salaryPerHour * $nightHoursActual * self::NIGHT_SHIFT_MULTIPLIER)
             : 0;
@@ -294,7 +317,9 @@ class PayrollEngine
 
         // ── Trợ cấp ăn ca OT: cộng thêm 14.000đ/ngày OT ≥ 3h ───────
 
-        $otMealDays    = $this->getOTMealDays($userId, $period['period_from'], $period['period_to']);
+        $otMealDays    = $hasActivePeriod
+            ? $this->getOTMealDays($userId, $employmentFrom, $employmentTo)
+            : 0;
 
         $otMealBonus   = $otMealDays * self::OT_MEAL_ALLOWANCE;
 

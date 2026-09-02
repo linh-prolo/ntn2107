@@ -84,6 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'gender'                  => $_POST['gender']                  ?? 'male',
         'date_of_birth'           => $_POST['date_of_birth']           ?: null,
         'date_joined'             => $_POST['date_joined']             ?: null,
+        'resignation_date'        => $_POST['resignation_date']        ?: null,
         'ethnicity'               => trim($_POST['ethnicity']          ?? 'Kinh'),
         'marital_status'          => $_POST['marital_status']          ?? 'single',
         'mobile_phone'            => trim($_POST['mobile_phone']       ?? ''),
@@ -121,6 +122,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Số điện thoại không hợp lệ.';
     if (!empty($data['identity_no']) && !preg_match('/^[0-9]{9,12}$/', $data['identity_no']))
         $errors[] = 'Số CMND/CCCD phải là 9 hoặc 12 số.';
+    if ($data['date_joined'] && $data['resignation_date']
+        && $data['resignation_date'] < $data['date_joined'])
+        $errors[] = 'Ngày nghỉ việc phải từ ngày vào công ty trở đi.';
 
     if (empty($errors)) {
         if (empty($profile)) {
@@ -318,6 +322,14 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <input type="date" name="date_joined"
                                class="form-control <?= $cls ?>" <?= $ro ?>
                                value="<?= val('date_joined') ?>">
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">Ngày nghỉ việc</label>
+                        <input type="date" name="resignation_date"
+                               class="form-control <?= $cls ?>" <?= $ro ?>
+                               value="<?= val('resignation_date') ?>"
+                               min="<?= val('date_joined') ?>">
                     </div>
 
                     <div class="col-md-3">
@@ -948,6 +960,12 @@ document.getElementById('bankSelect')?.addEventListener('change', updateBankPrev
 document.querySelector('[name="bank_account"]')?.addEventListener('input', updateBankPreview);
 document.querySelector('[name="bank_branch"]')?.addEventListener('input', updateBankPreview);
 updateBankPreview();
+
+const dateJoinedInput = document.querySelector('[name="date_joined"]');
+const resignationDateInput = document.querySelector('[name="resignation_date"]');
+dateJoinedInput?.addEventListener('change', () => {
+    resignationDateInput.min = dateJoinedInput.value;
+});
 
 // ══════════════════════════════════════════════════
 // Copy to clipboard
