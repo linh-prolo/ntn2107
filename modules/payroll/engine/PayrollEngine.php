@@ -79,12 +79,6 @@ class PayrollEngine
 
         $to = $resignationDate && $resignationDate < $to ? $resignationDate : $to;
 
-        $stmt = $this->pdo->prepare(
-            "SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN ? AND ?"
-        );
-        $stmt->execute([$from, $to]);
-        $holidays = array_flip($stmt->fetchAll(PDO::FETCH_COLUMN));
-
         $count   = 0;
 
         $current = new DateTime($from);
@@ -93,7 +87,7 @@ class PayrollEngine
 
         while ($current <= $end) {
 
-            if ((int)$current->format('N') !== 7 && !isset($holidays[$current->format('Y-m-d')])) $count++;
+            if ((int)$current->format('N') !== 7) $count++;
 
             $current->modify('+1 day');
 
@@ -159,8 +153,9 @@ class PayrollEngine
 
 
 
+        $hasResignation = !empty($profile['resignation_date']);
         $employmentFrom = max($period['period_from'], $profile['date_joined'] ?? $period['period_from']);
-        $employmentTo   = min($period['period_to'], $profile['resignation_date'] ?? $period['period_to']);
+        $employmentTo   = min($period['period_to'], $hasResignation ? $profile['resignation_date'] : $period['period_to']);
         $hasActivePeriod = $employmentFrom <= $employmentTo;
         $workingDays = $hasActivePeriod
             ? $this->calcWorkingDays($employmentFrom, $employmentTo)
@@ -184,7 +179,7 @@ class PayrollEngine
         // ── Dữ liệu chấm công / nghỉ phép / OT ───────────────────────
 
         $att = $hasActivePeriod
-            ? $this->getAttendanceData($userId, $employmentFrom, $employmentTo)
+            ? $this->getAttendanceData($userId, $employmentFrom, $employmentTo, !$hasResignation)
             : $this->emptyAttendance();
         $lv  = $hasActivePeriod
             ? $this->getLeaveData($userId, $employmentFrom, $employmentTo)
@@ -201,7 +196,9 @@ class PayrollEngine
 
         $otherPaidLeaveDays = (float)($lv['other_paid_leave_days']  ?? 0);
 
-        $holidayPaidDays    = 0;
+        $holidayPaidDays    = !$hasResignation && $hasActivePeriod
+            ? $this->calcHolidayPaidDays($employmentFrom, $employmentTo)
+            : 0;
 
         $unpaidLeaveDays    = (float)($lv['unpaid_leave_days']      ?? 0);
 
@@ -505,6 +502,8 @@ class PayrollEngine
         if ($holidayPaidDays > 0)
 
             $remarkParts[] = "Nghỉ lễ: {$holidayPaidDays} ngày (hưởng lương)";
+        if ($hasResignation)
+            $remarkParts[] = "Nghỉ việc: không hưởng ngày lễ nguyên lương";
 
         if (!$attendEligible && $attendBonus > 0)
 
@@ -746,6 +745,28 @@ class PayrollEngine
 
     }
 
+    private function calcHolidayPaidDays(string $from, string $to): int
+
+    {
+
+        $stmt = $this->pdo->prepare(
+
+            "SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN ? AND ?"
+
+        );
+
+        $stmt->execute([$from, $to]);
+
+        return count(array_filter(
+
+            $stmt->fetchAll(PDO::FETCH_COLUMN),
+
+            fn($date) => (int)(new DateTime($date))->format('N') <= 5
+
+        ));
+
+    }
+
 
 
     private function getOTMealDays(int $userId, string $from, string $to): int
@@ -902,7 +923,7 @@ class PayrollEngine
 
 
 
-    private function getAttendanceData(int $userId, string $from, string $to): array
+    private function getAttendanceData(int $userId, string $from, string $to, bool $excludeHolidays = true): array
 
     {
 
@@ -924,6 +945,8 @@ class PayrollEngine
 
                 : implode(',', array_map(fn($d) => $this->pdo->quote($d), $holidays));
 
+            $nonHolidayCondition = $excludeHolidays ? " AND work_date NOT IN ($holidayList)" : '';
+
 
 
             $stmt = $this->pdo->prepare("
@@ -936,7 +959,7 @@ class PayrollEngine
 
                              AND DAYOFWEEK(work_date) != 1
 
-                             AND work_date NOT IN ($holidayList)
+                             $nonHolidayCondition
 
                         THEN 1 END
 
@@ -948,7 +971,7 @@ class PayrollEngine
 
                              AND DAYOFWEEK(work_date) != 1
 
-                             AND work_date NOT IN ($holidayList)
+                             $nonHolidayCondition
 
                         THEN late_minutes ELSE 0 END
 
@@ -960,7 +983,7 @@ class PayrollEngine
 
                              AND DAYOFWEEK(work_date) != 1
 
-                             AND work_date NOT IN ($holidayList)
+                             $nonHolidayCondition
 
                         THEN early_leave_minutes ELSE 0 END
 
@@ -972,7 +995,7 @@ class PayrollEngine
 
                              AND DAYOFWEEK(work_date) != 1
 
-                             AND work_date NOT IN ($holidayList)
+                             $nonHolidayCondition
 
                         THEN CONCAT(
 
