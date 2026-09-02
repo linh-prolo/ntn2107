@@ -1208,6 +1208,7 @@ CREATE TABLE `employee_profiles` (
   `has_social_insurance` tinyint(1) NOT NULL DEFAULT 0,
   `insurance_from` date DEFAULT NULL,
   `date_joined` date DEFAULT NULL,
+  `resignation_date` date DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `annual_leave_total` tinyint(4) NOT NULL DEFAULT 9
@@ -1217,14 +1218,14 @@ CREATE TABLE `employee_profiles` (
 -- Đang đổ dữ liệu cho bảng `employee_profiles`
 --
 
-INSERT INTO `employee_profiles` (`id`, `user_id`, `gender`, `date_of_birth`, `ethnicity`, `marital_status`, `mobile_phone`, `permanent_province`, `permanent_district_text`, `permanent_commune_text`, `permanent_hamlet`, `same_as_permanent`, `temp_province`, `temp_district_text`, `temp_commune_text`, `temp_hamlet`, `identity_no`, `identity_issue_date`, `identity_issue_place`, `social_book_no`, `personal_tax_code`, `bank_account`, `bank_name`, `bank_branch`, `dependants`, `has_social_insurance`, `insurance_from`, `date_joined`, `created_at`, `updated_at`, `annual_leave_total`) VALUES
-(2, 1, 'male', NULL, 'Kinh', 'single', '', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, '2026-03-10 14:16:19', '2026-03-10 14:16:19', 9),
-(18, 58, 'male', NULL, 'Kinh', 'single', '971998863', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, '2026-07-06 06:12:37', '2026-07-06 06:12:37', 9),
-(19, 69, 'male', NULL, 'Kinh', 'single', '969099903', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, '2026-07-06 06:17:25', '2026-07-06 06:17:25', 9),
-(20, 67, 'male', NULL, 'Kinh', 'single', '962012921', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, '2026-07-06 06:17:39', '2026-07-06 06:17:39', 9),
-(21, 61, 'male', NULL, 'Kinh', 'single', '948201189', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, '2026-07-06 06:35:29', '2026-07-06 06:35:29', 9),
-(22, 63, 'male', NULL, 'Kinh', 'single', '', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, '2026-07-06 07:53:48', '2026-07-06 07:53:48', 9),
-(23, 62, 'male', NULL, 'Kinh', 'single', '866687525', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, '2026-07-06 08:14:47', '2026-07-06 08:14:47', 9);
+INSERT INTO `employee_profiles` (`id`, `user_id`, `gender`, `date_of_birth`, `ethnicity`, `marital_status`, `mobile_phone`, `permanent_province`, `permanent_district_text`, `permanent_commune_text`, `permanent_hamlet`, `same_as_permanent`, `temp_province`, `temp_district_text`, `temp_commune_text`, `temp_hamlet`, `identity_no`, `identity_issue_date`, `identity_issue_place`, `social_book_no`, `personal_tax_code`, `bank_account`, `bank_name`, `bank_branch`, `dependants`, `has_social_insurance`, `insurance_from`, `date_joined`, `resignation_date`, `created_at`, `updated_at`, `annual_leave_total`) VALUES
+(2, 1, 'male', NULL, 'Kinh', 'single', '', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, NULL, '2026-03-10 14:16:19', '2026-03-10 14:16:19', 9),
+(18, 58, 'male', NULL, 'Kinh', 'single', '971998863', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, NULL, '2026-07-06 06:12:37', '2026-07-06 06:12:37', 9),
+(19, 69, 'male', NULL, 'Kinh', 'single', '969099903', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, NULL, '2026-07-06 06:17:25', '2026-07-06 06:17:25', 9),
+(20, 67, 'male', NULL, 'Kinh', 'single', '962012921', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, NULL, '2026-07-06 06:17:39', '2026-07-06 06:17:39', 9),
+(21, 61, 'male', NULL, 'Kinh', 'single', '948201189', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, NULL, '2026-07-06 06:35:29', '2026-07-06 06:35:29', 9),
+(22, 63, 'male', NULL, 'Kinh', 'single', '', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, NULL, '2026-07-06 07:53:48', '2026-07-06 07:53:48', 9),
+(23, 62, 'male', NULL, 'Kinh', 'single', '866687525', NULL, '', '', '', 0, NULL, '', '', '', '', NULL, '', '', '', '', '', '', 0, 0, NULL, NULL, NULL, '2026-07-06 08:14:47', '2026-07-06 08:14:47', 9);
 
 -- --------------------------------------------------------
 
