@@ -288,6 +288,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect($expensePageUrl(['tab' => 'mine']));
     }
 
+    if ($action === 'submit_batch' || $action === 'approve_batch') {
+        $isSubmitting = $action === 'submit_batch';
+        $redirectTab = $isSubmitting ? 'mine' : 'pending';
+        $selectedIds = $_POST['expense_ids'] ?? [];
+        $expenseIds = is_array($selectedIds)
+            ? array_values(array_unique(array_filter(array_map('intval', $selectedIds), static fn(int $id): bool => $id > 0)))
+            : [];
+
+        if ($isSubmitting && !hasRole('accountant')) {
+            setFlash('danger', 'Bạn không có quyền gửi duyệt hàng loạt.');
+        } elseif (!$isSubmitting && !$canApprove) {
+            setFlash('danger', 'Bạn không có quyền duyệt hàng loạt.');
+        } elseif (!$expenseIds) {
+            setFlash('danger', 'Vui lòng chọn ít nhất một đề xuất.');
+        } else {
+            $placeholders = implode(',', array_fill(0, count($expenseIds), '?'));
+            $sql = $isSubmitting
+                ? "UPDATE expense_requests
+                   SET status = 'submitted', reject_reason = NULL, updated_at = CURRENT_TIMESTAMP
+                   WHERE id IN ($placeholders) AND requested_by = ? AND status = 'draft'"
+                : "UPDATE expense_requests
+                   SET status = 'approved', approved_by = ?, approved_at = CURRENT_TIMESTAMP, reject_reason = NULL,
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE id IN ($placeholders) AND status = 'submitted'";
+            $params = $isSubmitting
+                ? [...$expenseIds, currentUserId()]
+                : [currentUserId(), ...$expenseIds];
+
+            try {
+                $pdo->beginTransaction();
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($params);
+                $successful = $stmt->rowCount();
+                $pdo->commit();
+                $failed = count($expenseIds) - $successful;
+                $message = $isSubmitting ? "Đã gửi duyệt $successful khoản" : "Đã duyệt $successful khoản";
+                setFlash($failed > 0 ? 'warning' : 'success', $failed > 0 ? "$message, $failed khoản không thỏa điều kiện." : "$message.");
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                setFlash('danger', 'Không thể thực hiện thao tác hàng loạt.');
+            }
+        }
+        redirect($expensePageUrl(['tab' => $redirectTab]));
+    }
+
     if ($action === 'delete') {
         $expenseId = (int)($_POST['id'] ?? 0);
         $expense = $findExpense($expenseId);
@@ -577,6 +624,24 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <p class="text-muted mb-0">Tạo đề xuất, gửi duyệt và theo dõi thanh toán theo luồng form POST truyền thống.</p>
             </div>
             <div class="d-flex flex-wrap gap-2">
+                <?php if ($activeTab === 'mine' && hasRole('accountant')): ?>
+                    <form method="post" id="submit-batch-form" data-batch-form data-confirm="Gửi các đề xuất đã chọn để duyệt?">
+                        <?= csrfInput() ?>
+                        <input type="hidden" name="action" value="submit_batch">
+                        <button type="submit" class="btn btn-success" data-batch-button disabled>
+                            <i class="fas fa-paper-plane me-1"></i>Gửi duyệt 1 loạt
+                        </button>
+                    </form>
+                <?php endif; ?>
+                <?php if ($activeTab === 'pending' && $canApprove): ?>
+                    <form method="post" id="approve-batch-form" data-batch-form data-confirm="Duyệt các đề xuất đã chọn?">
+                        <?= csrfInput() ?>
+                        <input type="hidden" name="action" value="approve_batch">
+                        <button type="submit" class="btn btn-success" data-batch-button disabled>
+                            <i class="fas fa-check me-1"></i>Duyệt 1 loạt
+                        </button>
+                    </form>
+                <?php endif; ?>
                 <?php if ($canManageCategories): ?>
                     <a href="/erp/<?= e($expensePageUrl(['tab' => 'categories'])) ?>" class="btn btn-outline-secondary">
                         <i class="fas fa-tags me-1"></i>Loại chi phí
@@ -881,6 +946,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <table class="table table-hover align-middle mb-0">
                         <thead class="table-dark">
                             <tr>
+                                <th class="text-center">
+                                    <input type="checkbox" class="form-check-input" id="select-all-expenses" aria-label="Chọn tất cả đề xuất">
+                                </th>
                                 <th>Số phiếu</th>
                                 <th>Ngày tạo</th>
                                 <th>Số HĐ</th>
@@ -894,7 +962,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         </thead>
                         <tbody>
                         <?php if (!$expenses): ?>
-                            <tr><td colspan="9" class="text-center text-muted py-4">Chưa có đề xuất chi phí nào.</td></tr>
+                            <tr><td colspan="10" class="text-center text-muted py-4">Chưa có đề xuất chi phí nào.</td></tr>
                         <?php else: ?>
                             <?php foreach ($expenses as $expense): ?>
                                 <?php
@@ -915,6 +983,10 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 ?>
                                 <tr id="expense-<?= (int)$expense['id'] ?>" class="expense-row"
                                     data-search="<?= e(strtolower($expense['request_no'] . ' ' . $expense['purpose'] . ' ' . ($expense['invoice_company'] ?? ''))) ?>">
+                                    <td class="text-center">
+                                        <input type="checkbox" class="form-check-input expense-checkbox" name="expense_ids[]" value="<?= (int)$expense['id'] ?>"
+                                            form="<?= $activeTab === 'pending' ? 'approve-batch-form' : 'submit-batch-form' ?>" aria-label="Chọn <?= e($expense['request_no']) ?>">
+                                    </td>
                                     <td class="fw-semibold text-primary"><?= e($expense['request_no']) ?></td>
                                     <td><?= e(formatDate($expense['expense_date'])) ?></td>
                                     <td>
@@ -1214,6 +1286,32 @@ document.querySelectorAll('.btn-edit-invoice').forEach((button) => {
 document.getElementById('editInvoiceHasInvoice')?.addEventListener('change', function () {
     document.getElementById('editInvoiceFields')?.classList.toggle('d-none', !this.checked);
 });
+
+(function () {
+    const selectAll = document.getElementById('select-all-expenses');
+    const checkboxes = Array.from(document.querySelectorAll('.expense-checkbox'));
+    const batchButton = document.querySelector('[data-batch-button]');
+    const batchForm = document.querySelector('[data-batch-form]');
+    if (!selectAll || !checkboxes.length) return;
+
+    const updateSelection = () => {
+        const selected = checkboxes.filter((checkbox) => checkbox.checked);
+        selectAll.checked = selected.length === checkboxes.length;
+        selectAll.indeterminate = selected.length > 0 && selected.length < checkboxes.length;
+        if (batchButton) batchButton.disabled = selected.length === 0;
+    };
+
+    selectAll.addEventListener('change', () => {
+        checkboxes.forEach((checkbox) => {
+            checkbox.checked = selectAll.checked;
+        });
+        updateSelection();
+    });
+    checkboxes.forEach((checkbox) => checkbox.addEventListener('change', updateSelection));
+    batchForm?.addEventListener('submit', (event) => {
+        if (!window.confirm(batchForm.dataset.confirm || 'Xác nhận thao tác?')) event.preventDefault();
+    });
+}());
 
 (function () {
     const searchInput = document.getElementById('searchExpense');
