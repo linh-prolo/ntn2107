@@ -6,10 +6,48 @@ requireLogin();
 requireRole('director', 'accountant', 'warehouse', 'production', 'manager');
 $pdo = getDBConnection();
 
-$selectedDate = trim((string)($_GET['date'] ?? date('Y-m-d')));
-if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $selectedDate)) {
-    $selectedDate = date('Y-m-d');
+$filterType = trim((string)($_GET['filter_type'] ?? 'today'));
+if (!in_array($filterType, ['today', 'week', 'month', 'custom'], true)) {
+    $filterType = 'today';
 }
+
+$dateFrom = trim((string)($_GET['date_from'] ?? ''));
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom)) {
+    $dateFrom = '';
+}
+$dateTo = trim((string)($_GET['date_to'] ?? ''));
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo)) {
+    $dateTo = '';
+}
+if ($filterType === 'custom' && (!$dateFrom || !$dateTo)) {
+    $filterType = 'today';
+}
+
+$customerId = (int)($_GET['customer_id'] ?? 0);
+
+$customers = fetchAllSafe($pdo, "SELECT id, customer_name FROM customers ORDER BY customer_name");
+
+$where = ['1=1'];
+$params = [];
+
+if ($filterType === 'today') {
+    $where[] = 'DATE(d.delivery_date) = CURDATE()';
+} elseif ($filterType === 'week') {
+    $where[] = 'DATE(d.delivery_date) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)';
+} elseif ($filterType === 'month') {
+    $where[] = 'YEAR(d.delivery_date) = YEAR(CURDATE()) AND MONTH(d.delivery_date) = MONTH(CURDATE())';
+} elseif ($filterType === 'custom' && $dateFrom && $dateTo) {
+    $where[] = 'DATE(d.delivery_date) BETWEEN ? AND ?';
+    $params[] = $dateFrom;
+    $params[] = $dateTo;
+}
+
+if ($customerId > 0) {
+    $where[] = 'd.customer_id = ?';
+    $params[] = $customerId;
+}
+
+$whereSql = implode(' AND ', $where);
 
 $rows = fetchAllSafe($pdo, "SELECT d.id, d.delivery_no, d.delivery_date, d.sender_name, d.driver_name, d.vehicle_plate, d.note, d.status,
                             c.customer_name,
@@ -18,9 +56,17 @@ $rows = fetchAllSafe($pdo, "SELECT d.id, d.delivery_no, d.delivery_date, d.sende
                             FROM oqc_deliveries d
                             LEFT JOIN customers c ON c.id = d.customer_id
                             LEFT JOIN oqc_delivery_items di ON di.delivery_id = d.id
-                            WHERE d.delivery_date = ?
+                            WHERE $whereSql
                             GROUP BY d.id
-                            ORDER BY d.id DESC", [$selectedDate]);
+                            ORDER BY d.id DESC", $params);
+
+$totalDeliveries = count($rows);
+$totalDone = 0.0;
+$totalError = 0.0;
+foreach ($rows as $row) {
+    $totalDone += (float)$row['total_done'];
+    $totalError += (float)$row['total_error'];
+}
 
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/header.php';
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
@@ -35,9 +81,29 @@ $csrf = generateCSRF();
     </div>
 
     <div class="card border-0 shadow-sm mb-3"><div class="card-body py-2">
-        <form class="row g-2 align-items-center" method="get">
-            <div class="col-md-3">
-                <input type="date" name="date" class="form-control form-control-sm" value="<?= e($selectedDate) ?>">
+        <form class="row g-2 align-items-center" method="get" id="filterForm">
+            <div class="col-auto">
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-outline-primary quick-filter-btn<?= $filterType === 'today' ? ' active' : '' ?>" data-filter="today">Hôm nay</button>
+                    <button type="button" class="btn btn-outline-primary quick-filter-btn<?= $filterType === 'week' ? ' active' : '' ?>" data-filter="week">7 ngày</button>
+                    <button type="button" class="btn btn-outline-primary quick-filter-btn<?= $filterType === 'month' ? ' active' : '' ?>" data-filter="month">Tháng này</button>
+                    <button type="button" class="btn btn-outline-primary quick-filter-btn<?= $filterType === 'custom' ? ' active' : '' ?>" data-filter="custom">Tuỳ chọn</button>
+                </div>
+                <input type="hidden" name="filter_type" id="filterTypeInput" value="<?= e($filterType) ?>">
+            </div>
+            <div class="col-auto">
+                <input type="date" name="date_from" id="dateFrom" class="form-control form-control-sm" value="<?= e($dateFrom) ?>" <?= $filterType === 'custom' ? '' : 'disabled' ?>>
+            </div>
+            <div class="col-auto">
+                <input type="date" name="date_to" id="dateTo" class="form-control form-control-sm" value="<?= e($dateTo) ?>" <?= $filterType === 'custom' ? '' : 'disabled' ?>>
+            </div>
+            <div class="col-auto">
+                <select name="customer_id" class="form-select form-select-sm">
+                    <option value="0">-- Tất cả khách hàng --</option>
+                    <?php foreach ($customers as $customer): ?>
+                        <option value="<?= (int)$customer['id'] ?>" <?= $customerId === (int)$customer['id'] ? 'selected' : '' ?>><?= e($customer['customer_name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <div class="col-auto">
                 <button class="btn btn-sm btn-primary"><i class="fas fa-filter me-1"></i>Lọc</button>
@@ -47,6 +113,12 @@ $csrf = generateCSRF();
             </div>
         </form>
     </div></div>
+
+    <div class="alert alert-info d-flex flex-wrap gap-3 align-items-center mb-3">
+        <div><strong>Tổng phiếu giao:</strong> <?= e(number_format($totalDeliveries, 0, ',', '.')) ?></div>
+        <div><strong>Tổng SL thành phẩm:</strong> <span class="text-success"><?= e(number_format($totalDone, 2, ',', '.')) ?></span></div>
+        <div><strong>Tổng SL lỗi:</strong> <span class="text-danger"><?= e(number_format($totalError, 2, ',', '.')) ?></span></div>
+    </div>
 
     <div class="card border-0 shadow-sm"><div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
@@ -93,6 +165,17 @@ $csrf = generateCSRF();
         </table>
     </div></div>
 </div></div>
+<script>
+document.querySelectorAll('.quick-filter-btn').forEach(btn => btn.addEventListener('click', function () {
+    const filter = this.dataset.filter;
+    document.getElementById('filterTypeInput').value = filter;
+    document.getElementById('dateFrom').disabled = filter !== 'custom';
+    document.getElementById('dateTo').disabled = filter !== 'custom';
+    if (filter !== 'custom') {
+        document.getElementById('filterForm').submit();
+    }
+}));
+</script>
 <?php if (hasRole('director')): ?>
 <script>
 document.querySelectorAll('.btn-delete-delivery').forEach(btn => btn.addEventListener('click', async function () {
