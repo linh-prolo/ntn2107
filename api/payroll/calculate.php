@@ -26,12 +26,22 @@ if ($period['status'] === 'locked') {
     echo json_encode(['ok' => false, 'msg' => '🔒 Kỳ lương đã lock, không thể tính lại']); exit;
 }
 
-// Lấy tất cả nhân viên active
-$users = $pdo->query("
-    SELECT id FROM users
-    WHERE is_active = 1
-    ORDER BY full_name
-")->fetchAll(PDO::FETCH_COLUMN);
+// Lấy nhân viên active HOẶC nhân viên có ngày nghỉ việc nằm trong kỳ lương này
+// (để vẫn tính lương + khấu trừ thuế TNCN cho tháng họ nghỉ việc, dù is_active = 0)
+$stmtUsers = $pdo->prepare("
+    SELECT DISTINCT u.id, u.full_name
+    FROM users u
+    LEFT JOIN employee_profiles ep ON ep.user_id = u.id
+    WHERE u.is_active = 1
+       OR (ep.resignation_date IS NOT NULL
+           AND ep.resignation_date BETWEEN :period_from AND :period_to)
+    ORDER BY u.full_name
+");
+$stmtUsers->execute([
+    ':period_from' => $period['period_from'],
+    ':period_to'   => $period['period_to'],
+]);
+$users = $stmtUsers->fetchAll(PDO::FETCH_COLUMN);
 
 $engine  = new PayrollEngine($pdo);
 $success = 0;
