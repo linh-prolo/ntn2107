@@ -59,7 +59,7 @@ class PayrollEngine
 
     const WORK_HOURS_PER_DAY  = 8;
 
-    const RESIGNATION_PIT_EXTRA_RATE = 0.10; // Trừ thêm 10% thuế TNCN khi có ngày nghỉ việc
+    const RESIGNATION_PIT_RATE = 0.10; // Thuế TNCN 10% khi có ngày nghỉ việc
 
 
 
@@ -449,14 +449,12 @@ class PayrollEngine
 
         );
 
-        $pitAmount = $this->calcPIT($taxableIncome);
-
-        // ── Trừ thêm 10% thuế TNCN nếu profile có ngày nghỉ việc ──────
-        $resignationExtraTax = 0;
-        if ($hasResignation) {
-            $resignationExtraTax = (int)round($taxableIncome * self::RESIGNATION_PIT_EXTRA_RATE);
-            $pitAmount += $resignationExtraTax;
-        }
+        $resignationPitAmount = $hasResignation
+            ? (int)round($grossForTax * self::RESIGNATION_PIT_RATE)
+            : 0;
+        $pitAmount = $hasResignation
+            ? $resignationPitAmount
+            : $this->calcPIT($taxableIncome);
 
 
 
@@ -513,8 +511,8 @@ class PayrollEngine
             $remarkParts[] = "Nghỉ lễ: {$holidayPaidDays} ngày (hưởng lương)";
         if ($hasResignation)
             $remarkParts[] = "Nghỉ việc: không hưởng ngày lễ nguyên lương";
-        if ($resignationExtraTax > 0)
-            $remarkParts[] = "Nghỉ việc: trừ thêm 10% thuế TNCN (-".number_format($resignationExtraTax)." đ)";
+        if ($hasResignation)
+            $remarkParts[] = "Nghỉ việc: thuế TNCN = 10% × lương gross (-".number_format($resignationPitAmount)." đ)";
 
         if (!$attendEligible && $attendBonus > 0)
 

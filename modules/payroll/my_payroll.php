@@ -428,19 +428,13 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <td class="text-muted small">Thu nhập tính thuế / Taxable income</td>
                             <td class="text-end"><?= number_format($slipDetail['taxable_income'], 0, '.', ',') ?></td>
                         </tr>
-                        <?php
-                            $resignationExtraTax = !empty($slipDetail['resignation_date'])
-                                ? (int)round($slipDetail['taxable_income'] * PayrollEngine::RESIGNATION_PIT_EXTRA_RATE)
-                                : 0;
-                        ?>
-                        <?php if ($resignationExtraTax > 0): ?>
-                        <tr>
-                            <td class="text-muted small">Trừ thêm do nghỉ việc (10% TNCN) / Extra PIT deduction (resignation)</td>
-                            <td class="text-end text-danger"><?= number_format($resignationExtraTax, 0, '.', ',') ?></td>
-                        </tr>
-                        <?php endif; ?>
                         <tr class="table-warning">
-                            <td class="fw-bold">(31) Thuế TNCN / PIT payment</td>
+                            <td class="fw-bold">
+                                (31) Thuế TNCN / PIT payment
+                                <?php if (!empty($slipDetail['resignation_date'])): ?>
+                                <span class="badge bg-warning text-dark ms-1" style="font-size:10px">Nghỉ việc: 10% × lương gross, không áp dụng giảm trừ</span>
+                                <?php endif; ?>
+                            </td>
                             <td class="text-end fw-bold"><?= number_format($slipDetail['pit_amount'], 0, '.', ',') ?></td>
                         </tr>
                         <tr>
