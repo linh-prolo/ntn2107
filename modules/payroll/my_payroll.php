@@ -2,6 +2,7 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/modules/payroll/engine/PayrollEngine.php';
 requireLogin();
 
 $pdo  = getDBConnection();
@@ -35,7 +36,7 @@ if ($viewId) {
                pp.approved_at, pp.locked_at,
                u.full_name, u.email,
                d.name AS department_name,
-               ep.bank_account, ep.bank_name, ep.bank_branch
+               ep.bank_account, ep.bank_name, ep.bank_branch, ep.resignation_date
         FROM payroll_slips ps
         JOIN payroll_periods pp ON ps.period_id = pp.id
         JOIN users u ON ps.user_id = u.id
@@ -427,6 +428,17 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <td class="text-muted small">Thu nhập tính thuế / Taxable income</td>
                             <td class="text-end"><?= number_format($slipDetail['taxable_income'], 0, '.', ',') ?></td>
                         </tr>
+                        <?php
+                            $resignationExtraTax = !empty($slipDetail['resignation_date'])
+                                ? (int)round($slipDetail['taxable_income'] * PayrollEngine::RESIGNATION_PIT_EXTRA_RATE)
+                                : 0;
+                        ?>
+                        <?php if ($resignationExtraTax > 0): ?>
+                        <tr>
+                            <td class="text-muted small">Trừ thêm do nghỉ việc (10% TNCN) / Extra PIT deduction (resignation)</td>
+                            <td class="text-end text-danger"><?= number_format($resignationExtraTax, 0, '.', ',') ?></td>
+                        </tr>
+                        <?php endif; ?>
                         <tr class="table-warning">
                             <td class="fw-bold">(31) Thuế TNCN / PIT payment</td>
                             <td class="text-end fw-bold"><?= number_format($slipDetail['pit_amount'], 0, '.', ',') ?></td>
