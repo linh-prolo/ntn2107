@@ -407,10 +407,11 @@ class PayrollEngine
         // ── BHXH ─────────────────────────────────────────────────────
 
         $hasInsurance = (int)($profile['has_social_insurance'] ?? 0);
+        $siBase       = $otBase;
 
-        $siEmployee   = $hasInsurance ? round($basicSalary * self::SI_EMPLOYEE_RATE) : 0;
+        $siEmployee   = $hasInsurance ? round($siBase * self::SI_EMPLOYEE_RATE) : 0;
 
-        $siCompany    = $hasInsurance ? round($basicSalary * self::SI_COMPANY_RATE)  : 0;
+        $siCompany    = $hasInsurance ? round($siBase * self::SI_COMPANY_RATE)  : 0;
 
 
 
@@ -524,7 +525,7 @@ class PayrollEngine
 
         if ($hasInsurance)
 
-            $remarkParts[] = "BHXH NV: -".number_format($siEmployee)." đ (10.5% × lương CB)";
+            $remarkParts[] = "BHXH NV: -".number_format($siEmployee)." đ (10.5% × (Lương CB + PC trách nhiệm + PC thâm niên))";
 
 
 
