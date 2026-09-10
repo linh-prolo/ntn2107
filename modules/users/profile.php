@@ -620,7 +620,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                    <?= $canEdit ? '' : 'disabled' ?>>
                             <label class="form-check-label" for="hasSocialInsurance">
                                 Nhân viên có đóng BHXH
-                                <small class="text-muted d-block">Trừ 10.5% × lương cơ bản khi tính lương</small>
+                                <small class="text-muted d-block">Trừ 10.5% × (Lương CB + PC trách nhiệm + PC thâm niên) khi tính lương</small>
                             </label>
                         </div>
                     </div>
