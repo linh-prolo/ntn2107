@@ -57,30 +57,33 @@ $slips = $stmt->fetchAll(PDO::FETCH_ASSOC);
 // I  OT Thường
 // J  OT CN
 // K  OT Lễ
-// L  (bỏ - ăn ca)
-// M  Trang phục
-// N  Điện thoại
-// O  Đi lại
-// P  Hiệu quả (performance_bonus)
-// Q  Nhà ở (housing_received)
-// R  Trách nhiệm (responsibility_allowance_received)
-// S  Thâm niên (seniority_allowance_received)
-// T  Độc hại (pit_adjustment)
-// U  Chuyên cần (attendance_bonus)
-// V  BHXH NV
-// W  Thuế TNCN
-// X  Trừ muộn/sớm
-// Y  Thu nhập khác (other_income — tay)
-// Z  Thưởng hiệu suất (tay)
-// AA Thưởng khác (tay)
-// AB Tạm ứng
-// AC Gross
-// AD Trừ KPI
-// AE Thực nhận
-// AF Chuyển khoản
-// AG Ghi chú
+// L  🌙 OT Đêm ngày thường (ot_night_weekday_amount)
+// M  🌙 OT Đêm cuối tuần (ot_night_weekend_amount)
+// N  🌙 OT Đêm ngày lễ (ot_night_holiday_amount)
+// O  Trang phục
+// P  Điện thoại
+// Q  Đi lại
+// R  Hiệu quả (performance_bonus)
+// S  Nhà ở (housing_received)
+// T  Trách nhiệm (responsibility_allowance_received)
+// U  Thâm niên (seniority_allowance_received)
+// V  Độc hại (pit_adjustment)
+// W  Chuyên cần (attendance_bonus)
+// X  🌙 Phụ trội làm đêm (night_shift_bonus)
+// Y  BHXH NV
+// Z  Thuế TNCN
+// AA Trừ muộn/sớm
+// AB Thu nhập khác (other_income — tay)
+// AC Thưởng hiệu suất (tay)
+// AD Thưởng khác (tay)
+// AE Tạm ứng
+// AF Gross
+// AG Trừ KPI
+// AH Thực nhận
+// AI Chuyển khoản
+// AJ Ghi chú
 
-$lastCol = 'AG';
+$lastCol = 'AJ';
 
 $spreadsheet = new Spreadsheet();
 $sheet = $spreadsheet->getActiveSheet();
@@ -127,13 +130,13 @@ $sheet->getRowDimension(2)->setRowHeight(16);
 $groups = [
     'A3:D3'   => ['',                    '2c3e50'],
     'E3:G3'   => ['NGÀY CÔNG',           '1f618d'],
-    'H3:K3'   => ['LƯƠNG & OT',          '1a6b8a'],
-    'L3:O3'   => ['TRỢ CẤP',             '1e8449'],
-    'P3:U3'   => ['PHỤ CẤP & THƯỞNG',   '9a7d0a'],
-    'V3:X3'   => ['KHẤU TRỪ TỰ ĐỘNG',   '922b21'],
-    'Y3:AB3'  => ['ĐIỀU CHỈNH THỦ CÔNG','6e2f1a'],
-    'AC3:AE3' => ['KẾT QUẢ',             '1e8449'],
-    'AF3:AG3' => ['THÔNG TIN',           '555555'],
+    'H3:N3'   => ['LƯƠNG & OT',          '1a6b8a'],
+    'O3:Q3'   => ['TRỢ CẤP',             '1e8449'],
+    'R3:X3'   => ['PHỤ CẤP & THƯỞNG',   '9a7d0a'],
+    'Y3:AA3'  => ['KHẤU TRỪ TỰ ĐỘNG',   '922b21'],
+    'AB3:AE3' => ['ĐIỀU CHỈNH THỦ CÔNG','6e2f1a'],
+    'AF3:AH3' => ['KẾT QUẢ',             '1e8449'],
+    'AI3:AJ3' => ['THÔNG TIN',           '555555'],
 ];
 foreach ($groups as $range => [$label, $color]) {
     [$sc] = explode(':', $range);
@@ -160,34 +163,37 @@ $headers = [
     'I'  => 'OT Thường',
     'J'  => 'OT CN',
     'K'  => 'OT Lễ',
+    'L'  => '🌙 OT Đêm TT',
+    'M'  => '🌙 OT Đêm CN',
+    'N'  => '🌙 OT Đêm Lễ',
     // Trợ cấp
-    'L'  => '', // Đã bỏ ăn ca
-    'M'  => 'Trang phục',
-    'N'  => 'Điện thoại',
-    'O'  => 'Đi lại',
+    'O'  => 'Trang phục',
+    'P'  => 'Điện thoại',
+    'Q'  => 'Đi lại',
     // Phụ cấp & Thưởng
-    'P'  => 'Hiệu quả',
-    'Q'  => 'Nhà ở',
-    'R'  => 'Trách nhiệm',
-    'S'  => 'Thâm niên',
-    'T'  => 'Độc hại',
-    'U'  => 'Chuyên cần',
+    'R'  => 'Hiệu quả',
+    'S'  => 'Nhà ở',
+    'T'  => 'Trách nhiệm',
+    'U'  => 'Thâm niên',
+    'V'  => 'Độc hại',
+    'W'  => 'Chuyên cần',
+    'X'  => '🌙 Phụ trội đêm',
     // Khấu trừ tự động
-    'V'  => 'BHXH NV',
-    'W'  => 'Thuế TNCN',
-    'X'  => 'Trừ muộn',
+    'Y'  => 'BHXH NV',
+    'Z'  => 'Thuế TNCN',
+    'AA' => 'Trừ muộn',
     // Điều chỉnh tay
-    'Y'  => 'Thu nhập khác',
-    'Z'  => 'Thưởng HS',
-    'AA' => 'Thưởng khác',
-    'AB' => 'Tạm ứng',
+    'AB' => 'Thu nhập khác',
+    'AC' => 'Thưởng HS',
+    'AD' => 'Thưởng khác',
+    'AE' => 'Tạm ứng',
     // Kết quả
-    'AC' => 'Gross',
-    'AD' => 'Trừ KPI',
-    'AE' => 'Thực nhận',
+    'AF' => 'Gross',
+    'AG' => 'Trừ KPI',
+    'AH' => 'Thực nhận',
     // Thông tin
-    'AF' => 'Chuyển khoản',
-    'AG' => 'Ghi chú',
+    'AI' => 'Chuyển khoản',
+    'AJ' => 'Ghi chú',
 ];
 
 foreach ($headers as $col => $label) {
@@ -210,8 +216,8 @@ $moneyFmt = '#,##0';
 $numFmt   = '#,##0.0';
 
 // Cột cần format tiền
-$moneyCols = ['H','I','J','K','L','M','N','O','P','Q','R','S','T','U',
-              'V','W','X','Y','Z','AA','AB','AC','AD','AE','AF'];
+$moneyCols = ['H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X',
+              'Y','Z','AA','AB','AC','AD','AE','AF','AG','AH','AI'];
 
 // Cột tổng cộng
 $totalCols = array_fill_keys($moneyCols, 0);
@@ -235,34 +241,37 @@ foreach ($slips as $i => $s) {
         'I'  => (float)$s['ot_weekday_amount'],
         'J'  => (float)$s['ot_weekend_amount'],
         'K'  => (float)$s['ot_holiday_amount'],
+        'L'  => (float)($s['ot_night_weekday_amount'] ?? 0),
+        'M'  => (float)($s['ot_night_weekend_amount'] ?? 0),
+        'N'  => (float)($s['ot_night_holiday_amount'] ?? 0),
         // Trợ cấp
-        'L'  => 0, // Đã bỏ ăn ca
-        'M'  => (float)$s['clothes_received'],
-        'N'  => (float)$s['phone_received'],
-        'O'  => (float)$s['transport_received'],
+        'O'  => (float)$s['clothes_received'],
+        'P'  => (float)$s['phone_received'],
+        'Q'  => (float)$s['transport_received'],
         // Phụ cấp & Thưởng (tự động)
-        'P'  => (float)$s['performance_bonus'],
-        'Q'  => (float)($s['housing_received'] ?? 0),
-        'R'  => (float)($s['responsibility_allowance_received'] ?? 0),
-        'S'  => (float)($s['seniority_allowance_received'] ?? 0),
-        'T'  => (float)$s['pit_adjustment'],
-        'U'  => (float)$s['attendance_bonus'],
+        'R'  => (float)$s['performance_bonus'],
+        'S'  => (float)($s['housing_received'] ?? 0),
+        'T'  => (float)($s['responsibility_allowance_received'] ?? 0),
+        'U'  => (float)($s['seniority_allowance_received'] ?? 0),
+        'V'  => (float)$s['pit_adjustment'],
+        'W'  => (float)$s['attendance_bonus'],
+        'X'  => (float)($s['night_shift_bonus'] ?? 0),
         // Khấu trừ tự động
-        'V'  => (float)$s['si_employee'],
-        'W'  => (float)$s['pit_amount'],
-        'X'  => (float)$s['late_deduction'],
+        'Y'  => (float)$s['si_employee'],
+        'Z'  => (float)$s['pit_amount'],
+        'AA' => (float)$s['late_deduction'],
         // Điều chỉnh tay
-        'Y'  => (float)$s['other_income'],
-        'Z'  => (float)$s['performance_bonus'],
-        'AA' => (float)$s['other_bonus'],
-        'AB' => (float)$s['advance_payment'],
+        'AB' => (float)$s['other_income'],
+        'AC' => (float)$s['performance_bonus'],
+        'AD' => (float)$s['other_bonus'],
+        'AE' => (float)$s['advance_payment'],
         // Kết quả
-        'AC' => (float)$s['gross_salary'],
-        'AD' => (float)$s['kpi_deduction'],
-        'AE' => (float)$s['net_salary'],
+        'AF' => (float)$s['gross_salary'],
+        'AG' => (float)$s['kpi_deduction'],
+        'AH' => (float)$s['net_salary'],
         // Thông tin
-        'AF' => (float)$s['bank_transfer'],
-        'AG' => $s['remark'] ?? '',
+        'AI' => (float)$s['bank_transfer'],
+        'AJ' => $s['remark'] ?? '',
     ];
 
     foreach ($data as $col => $val) {
@@ -295,8 +304,8 @@ foreach ($slips as $i => $s) {
     }
 
     // Highlight thực nhận xanh đậm
-    $sheet->getStyle("AE{$row}")->getFont()->setBold(true);
-    $sheet->getStyle("AE{$row}")->getFont()->getColor()->setRGB('1e8449');
+    $sheet->getStyle("AH{$row}")->getFont()->setBold(true);
+    $sheet->getStyle("AH{$row}")->getFont()->getColor()->setRGB('1e8449');
 
     // Nghỉ không lương → đỏ
     if ((float)$s['unpaid_leave_days'] > 0) {
@@ -307,19 +316,24 @@ foreach ($slips as $i => $s) {
     if ($s['is_late_warning']) {
         $sheet->getStyle("C{$row}")->getFont()->getColor()->setRGB('e67e22');
     }
+    // OT đêm → tô màu tím nhấn mạnh
+    foreach (['L','M','N','X'] as $col) {
+        if ((float)($data[$col] ?? 0) > 0)
+            $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('6c3483');
+    }
     // Khấu trừ → đỏ
-    foreach (['V','W','X','AD'] as $col) {
+    foreach (['Y','Z','AA','AG'] as $col) {
         if ((float)($data[$col] ?? 0) > 0)
             $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('c0392b');
     }
     // Điều chỉnh tay → xanh lá
-    foreach (['Y','Z','AA'] as $col) {
+    foreach (['AB','AC','AD'] as $col) {
         if ((float)($data[$col] ?? 0) > 0)
             $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('1e8449');
     }
     // Tạm ứng → đỏ
     if ((float)$s['advance_payment'] > 0)
-        $sheet->getStyle("AB{$row}")->getFont()->getColor()->setRGB('c0392b');
+        $sheet->getStyle("AE{$row}")->getFont()->getColor()->setRGB('c0392b');
 
     $sheet->getRowDimension($row)->setRowHeight(16);
     $row++;
@@ -354,13 +368,14 @@ $colWidths = [
     'A'  =>  5,   'B'  => 10,   'C'  => 22,   'D'  => 15,
     'E'  =>  8,   'F'  =>  8,   'G'  =>  8,
     'H'  => 13,   'I'  => 11,   'J'  => 11,   'K'  => 11,
-    'L'  => 11,   'M'  => 11,   'N'  => 11,   'O'  => 11,
-    'P'  => 11,   'Q'  => 11,   'R'  => 11,   'S'  => 11,
-    'T'  => 11,   'U'  => 11,
-    'V'  => 11,   'W'  => 11,   'X'  => 11,
-    'Y'  => 13,   'Z'  => 11,   'AA' => 11,   'AB' => 11,
-    'AC' => 13,   'AD' => 11,   'AE' => 13,
-    'AF' => 13,   'AG' => 28,
+    'L'  => 12,   'M'  => 12,   'N'  => 12,
+    'O'  => 11,   'P'  => 11,   'Q'  => 11,
+    'R'  => 11,   'S'  => 11,   'T'  => 11,   'U'  => 11,
+    'V'  => 11,   'W'  => 11,   'X'  => 12,
+    'Y'  => 11,   'Z'  => 11,   'AA' => 11,
+    'AB' => 13,   'AC' => 11,   'AD' => 11,   'AE' => 11,
+    'AF' => 13,   'AG' => 11,   'AH' => 13,
+    'AI' => 13,   'AJ' => 28,
 ];
 foreach ($colWidths as $col => $w) {
     $sheet->getColumnDimension($col)->setWidth($w);
