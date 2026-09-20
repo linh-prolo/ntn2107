@@ -72,13 +72,6 @@ function verifyCSRF($token) {
     return false;
 }
 
-function isManualInvoiceRecord(array $invoice): bool {
-    return !empty($invoice['confirmed_by'])
-        && !empty($invoice['confirmed_at'])
-        && !empty($invoice['bkav_invoice_no'])
-        && !empty($invoice['is_locked']);
-}
-
 function getExpenseCategories($pdo) {
     try {
         $sql = "SELECT id, category_name FROM expense_categories WHERE is_active = 1 ORDER BY category_name";

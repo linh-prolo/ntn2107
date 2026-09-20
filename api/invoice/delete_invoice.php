@@ -22,7 +22,7 @@ try {
     $pdo->beginTransaction();
 
     $stmt = $pdo->prepare("
-        SELECT id, invoice_no, bkav_invoice_no, bkav_status, bkav_raw_response, is_locked, confirmed_by, confirmed_at
+        SELECT id, invoice_no, bkav_invoice_no, bkav_status, bkav_raw_response, is_locked
         FROM invoices
         WHERE id = ?
         FOR UPDATE
@@ -34,28 +34,22 @@ try {
         $pdo->rollBack();
         echo json_encode(['ok' => false, 'msg' => 'Không tìm thấy hoá đơn']); exit;
     }
-
     $bkavIssued = !empty($invoice['bkav_invoice_no']) || (($invoice['bkav_status'] ?? '') === 'issued');
     $bkavMeta = json_decode($invoice['bkav_raw_response'] ?? '', true);
-    $isManualEntry = isManualInvoiceRecord($invoice);
-    if ($bkavIssued && !$isManualEntry) {
+    if ($bkavIssued) {
         $pdo->rollBack();
         echo json_encode(['ok' => false, 'msg' => 'Hoá đơn đã xuất BKAV, không thể xoá']); exit;
     }
-    if (!empty($invoice['is_locked']) && !$isManualEntry) {
+    if (!empty($invoice['is_locked'])) {
         $pdo->rollBack();
         echo json_encode(['ok' => false, 'msg' => 'Hoá đơn đã bị khoá, không thể xoá']); exit;
     }
 
     $paymentCheck = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE invoice_id = ?");
     $paymentCheck->execute([$invoiceId]);
-    $paymentCount = (int)$paymentCheck->fetchColumn();
-    if ($paymentCount > 0 && !$isManualEntry) {
+    if ((int)$paymentCheck->fetchColumn() > 0) {
         $pdo->rollBack();
         echo json_encode(['ok' => false, 'msg' => 'Hoá đơn đã có ghi nhận thu tiền. Vui lòng xoá payment trước.']); exit;
-    }
-    if ($paymentCount > 0 && $isManualEntry) {
-        $pdo->prepare("DELETE FROM payments WHERE invoice_id = ?")->execute([$invoiceId]);
     }
 
     $pdo->prepare("
@@ -70,23 +64,41 @@ try {
         $deliveryIds = array_values(array_unique(array_filter(array_map('intval', $bkavMeta['delivery_ids']))));
     }
     if (!empty($deliveryIds)) {
-        $otherInvoices = $pdo->prepare("
-            SELECT bkav_raw_response
-            FROM invoices
-            WHERE id <> ? AND bkav_raw_response IS NOT NULL AND bkav_raw_response <> ''
-        ");
-        $otherInvoices->execute([$invoiceId]);
+        $candidateConditions = [];
+        $candidateParams = [$invoiceId];
+        foreach ($deliveryIds as $deliveryId) {
+            $candidateConditions[] = "bkav_raw_response LIKE ?";
+            $candidateParams[] = '%"delivery_ids":[' . $deliveryId . ',%';
+            $candidateConditions[] = "bkav_raw_response LIKE ?";
+            $candidateParams[] = '%"delivery_ids":[%' . ',' . $deliveryId . ',%';
+            $candidateConditions[] = "bkav_raw_response LIKE ?";
+            $candidateParams[] = '%"delivery_ids":[%' . ',' . $deliveryId . ']%';
+            $candidateConditions[] = "bkav_raw_response LIKE ?";
+            $candidateParams[] = '%"delivery_ids":[' . $deliveryId . ']%';
+        }
 
         $stillLinked = [];
-        foreach ($otherInvoices->fetchAll(PDO::FETCH_COLUMN) as $rawMeta) {
-            $otherMeta = json_decode($rawMeta, true);
-            if (!is_array($otherMeta) || ($otherMeta['source'] ?? '') !== 'oqc' || empty($otherMeta['delivery_ids']) || !is_array($otherMeta['delivery_ids'])) {
-                continue;
-            }
-            foreach ($otherMeta['delivery_ids'] as $otherDeliveryId) {
-                $otherDeliveryId = (int)$otherDeliveryId;
-                if ($otherDeliveryId > 0) {
-                    $stillLinked[$otherDeliveryId] = true;
+        if (!empty($candidateConditions)) {
+            $otherInvoices = $pdo->prepare("
+                SELECT bkav_raw_response
+                FROM invoices
+                WHERE id <> ?
+                  AND bkav_raw_response IS NOT NULL
+                  AND bkav_raw_response <> ''
+                  AND (" . implode(' OR ', $candidateConditions) . ")
+            ");
+            $otherInvoices->execute($candidateParams);
+
+            foreach ($otherInvoices->fetchAll(PDO::FETCH_COLUMN) as $rawMeta) {
+                $otherMeta = json_decode($rawMeta, true);
+                if (!is_array($otherMeta) || ($otherMeta['source'] ?? '') !== 'oqc' || empty($otherMeta['delivery_ids']) || !is_array($otherMeta['delivery_ids'])) {
+                    continue;
+                }
+                foreach ($otherMeta['delivery_ids'] as $otherDeliveryId) {
+                    $otherDeliveryId = (int)$otherDeliveryId;
+                    if ($otherDeliveryId > 0) {
+                        $stillLinked[$otherDeliveryId] = true;
+                    }
                 }
             }
         }
