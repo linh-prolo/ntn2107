@@ -72,13 +72,7 @@ try {
         $candidateParams = [$invoiceId];
         foreach ($deliveryIds as $deliveryId) {
             $candidateConditions[] = "bkav_raw_response LIKE ?";
-            $candidateParams[] = '%"delivery_ids":[' . $deliveryId . ',%';
-            $candidateConditions[] = "bkav_raw_response LIKE ?";
-            $candidateParams[] = '%"delivery_ids":[%' . ',' . $deliveryId . ',%';
-            $candidateConditions[] = "bkav_raw_response LIKE ?";
-            $candidateParams[] = '%"delivery_ids":[%' . ',' . $deliveryId . ']%';
-            $candidateConditions[] = "bkav_raw_response LIKE ?";
-            $candidateParams[] = '%"delivery_ids":[' . $deliveryId . ']%';
+            $candidateParams[] = '%' . $deliveryId . '%';
         }
 
         $stillLinked = [];
