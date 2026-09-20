@@ -96,6 +96,22 @@ $findExpense = static function (int $expenseId) use ($pdo): ?array {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ensurePostCsrf();
     $action = trim($_POST['action'] ?? '');
+    $normalizeExpenseIds = static function ($rawIds): array {
+        $ids = [];
+        foreach ((array)$rawIds as $rawId) {
+            if (is_int($rawId)) {
+                $id = $rawId;
+            } elseif (is_string($rawId) && preg_match('/^\d+$/', $rawId)) {
+                $id = (int)$rawId;
+            } else {
+                continue;
+            }
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+        return array_values($ids);
+    };
 
     if ($action === 'create_category') {
         if (!$canManageCategories) {
@@ -288,6 +304,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect($expensePageUrl(['tab' => 'mine']));
     }
 
+    if ($action === 'bulk_submit') {
+        $ids = $normalizeExpenseIds($_POST['ids'] ?? []);
+        if (!$ids) {
+            setFlash('danger', 'Vui lòng chọn ít nhất 1 đề xuất.');
+            redirect($expensePageUrl(['tab' => 'mine']));
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $pdo->prepare("UPDATE expense_requests
+            SET status = 'submitted', reject_reason = NULL, updated_at = CURRENT_TIMESTAMP
+            WHERE status = 'draft' AND requested_by = ? AND id IN ($placeholders)");
+        $stmt->execute(array_merge([currentUserId()], $ids));
+        $updatedCount = $stmt->rowCount();
+
+        if ($updatedCount > 0) {
+            setFlash('success', 'Đã gửi duyệt ' . $updatedCount . ' đề xuất.');
+        } else {
+            setFlash('danger', 'Không có đề xuất hợp lệ được chọn.');
+        }
+        redirect($expensePageUrl(['tab' => 'mine']));
+    }
+
     if ($action === 'delete') {
         $expenseId = (int)($_POST['id'] ?? 0);
         $expense = $findExpense($expenseId);
@@ -320,6 +358,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 WHERE id = ?")
                 ->execute([currentUserId(), $expenseId]);
             setFlash('success', 'Đã duyệt đề xuất chi phí.');
+        }
+        redirect($expensePageUrl(['tab' => 'pending']));
+    }
+
+    if ($action === 'bulk_approve') {
+        if (!$canApprove) {
+            setFlash('danger', 'Bạn không có quyền duyệt đề xuất.');
+            redirect($expensePageUrl(['tab' => 'pending']));
+        }
+
+        $ids = $normalizeExpenseIds($_POST['ids'] ?? []);
+        if (!$ids) {
+            setFlash('danger', 'Vui lòng chọn ít nhất 1 đề xuất.');
+            redirect($expensePageUrl(['tab' => 'pending']));
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $pdo->prepare("UPDATE expense_requests
+            SET status = 'approved', approved_by = ?, approved_at = CURRENT_TIMESTAMP, reject_reason = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE status = 'submitted' AND id IN ($placeholders)");
+        $stmt->execute(array_merge([currentUserId()], $ids));
+        $updatedCount = $stmt->rowCount();
+
+        if ($updatedCount > 0) {
+            setFlash('success', 'Đã duyệt ' . $updatedCount . ' đề xuất.');
+        } else {
+            setFlash('danger', 'Không có đề xuất hợp lệ được chọn.');
         }
         redirect($expensePageUrl(['tab' => 'pending']));
     }
@@ -566,6 +632,10 @@ if ($paymentExpense && $paymentExpense['status'] !== 'approved') {
     $paymentExpense = null;
 }
 
+$showBulkSubmit = $activeTab === 'mine';
+$showBulkApprove = $activeTab === 'pending' && $canApprove;
+$showBulkActions = $showBulkSubmit || $showBulkApprove;
+$expenseTableColspan = $showBulkActions ? 10 : 9;
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/header.php';
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 ?>
@@ -877,10 +947,45 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
             </div>
         <?php else: ?>
             <div class="card border-0 shadow-sm">
+                <?php if ($showBulkActions): ?>
+                    <div class="card-body py-2 border-bottom">
+                        <div class="d-flex flex-wrap align-items-center gap-3">
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" id="bulkSelectAllTop" data-role="bulk-select-all">
+                                <label class="form-check-label" for="bulkSelectAllTop">Chọn tất cả</label>
+                            </div>
+                            <span class="small text-muted" id="bulkSelectedCount">Đã chọn: 0</span>
+                            <?php if ($showBulkSubmit): ?>
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-success"
+                                        id="bulkActionButton"
+                                        data-form-id="bulkSubmitForm"
+                                        data-confirm-message="Gửi duyệt các đề xuất đã chọn?"
+                                        disabled>
+                                    Gửi duyệt hàng loạt (<span id="bulkButtonCount">0</span>)
+                                </button>
+                            <?php elseif ($showBulkApprove): ?>
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-success"
+                                        id="bulkActionButton"
+                                        data-form-id="bulkApproveForm"
+                                        data-confirm-message="Duyệt các đề xuất đã chọn?"
+                                        disabled>
+                                    Duyệt hàng loạt (<span id="bulkButtonCount">0</span>)
+                                </button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                         <thead class="table-dark">
                             <tr>
+                                <?php if ($showBulkActions): ?>
+                                    <th class="text-center" style="width: 48px;">
+                                        <input class="form-check-input" type="checkbox" id="bulkSelectAllHead" data-role="bulk-select-all">
+                                    </th>
+                                <?php endif; ?>
                                 <th>Số phiếu</th>
                                 <th>Ngày tạo</th>
                                 <th>Số HĐ</th>
@@ -894,7 +999,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         </thead>
                         <tbody>
                         <?php if (!$expenses): ?>
-                            <tr><td colspan="9" class="text-center text-muted py-4">Chưa có đề xuất chi phí nào.</td></tr>
+                            <tr><td colspan="<?= $expenseTableColspan ?>" class="text-center text-muted py-4">Chưa có đề xuất chi phí nào.</td></tr>
                         <?php else: ?>
                             <?php foreach ($expenses as $expense): ?>
                                 <?php
@@ -912,9 +1017,23 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                     'rejected' => 'Từ chối',
                                     default => 'Nháp',
                                 };
+                                $canBulkSelect = ($showBulkSubmit && $expense['status'] === 'draft' && (int)$expense['requested_by'] === currentUserId())
+                                    || ($showBulkApprove && $expense['status'] === 'submitted');
                                 ?>
                                 <tr id="expense-<?= (int)$expense['id'] ?>" class="expense-row"
                                     data-search="<?= e(strtolower($expense['request_no'] . ' ' . $expense['purpose'] . ' ' . ($expense['invoice_company'] ?? ''))) ?>">
+                                    <?php if ($showBulkActions): ?>
+                                        <td class="text-center">
+                                            <?php if ($canBulkSelect): ?>
+                                                <input
+                                                    class="form-check-input bulk-expense-checkbox"
+                                                    type="checkbox"
+                                                    value="<?= (int)$expense['id'] ?>"
+                                                    aria-label="Chọn đề xuất <?= e($expense['request_no']) ?>"
+                                                >
+                                            <?php endif; ?>
+                                        </td>
+                                    <?php endif; ?>
                                     <td class="fw-semibold text-primary"><?= e($expense['request_no']) ?></td>
                                     <td><?= e(formatDate($expense['expense_date'])) ?></td>
                                     <td>
@@ -1040,7 +1159,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 </tr>
                                 <?php if (!empty($paymentsByExpense[(int)$expense['id']])): ?>
                                     <tr class="collapse" id="payments-<?= (int)$expense['id'] ?>">
-                                        <td colspan="9" class="bg-light">
+                                        <td colspan="<?= $expenseTableColspan ?>" class="bg-light">
                                             <div class="small fw-semibold mb-2">Lịch sử thanh toán</div>
                                             <div class="table-responsive">
                                                 <table class="table table-sm mb-0">
@@ -1075,6 +1194,18 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     </table>
                 </div>
             </div>
+            <?php if ($showBulkSubmit): ?>
+                <form method="post" id="bulkSubmitForm" class="d-none">
+                    <?= csrfInput() ?>
+                    <input type="hidden" name="action" value="bulk_submit">
+                </form>
+            <?php endif; ?>
+            <?php if ($showBulkApprove): ?>
+                <form method="post" id="bulkApproveForm" class="d-none">
+                    <?= csrfInput() ?>
+                    <input type="hidden" name="action" value="bulk_approve">
+                </form>
+            <?php endif; ?>
         <?php endif; ?>
     </div>
 </div>
@@ -1234,6 +1365,76 @@ document.getElementById('editInvoiceHasInvoice')?.addEventListener('change', fun
             }
         });
     });
+}());
+
+(function () {
+    const actionButton = document.getElementById('bulkActionButton');
+    const checkboxes = Array.from(document.querySelectorAll('.bulk-expense-checkbox'));
+    const selectAllBoxes = Array.from(document.querySelectorAll('[data-role="bulk-select-all"]'));
+    const selectedCountLabel = document.getElementById('bulkSelectedCount');
+    const buttonCount = document.getElementById('bulkButtonCount');
+    if (!actionButton || checkboxes.length === 0) {
+        return;
+    }
+
+    const syncState = function () {
+        const selected = checkboxes.filter((checkbox) => checkbox.checked).length;
+        const allSelected = selected > 0 && selected === checkboxes.length;
+
+        actionButton.disabled = selected === 0;
+        if (selectedCountLabel) {
+            selectedCountLabel.textContent = 'Đã chọn: ' + selected;
+        }
+        if (buttonCount) {
+            buttonCount.textContent = String(selected);
+        }
+
+        selectAllBoxes.forEach((checkbox) => {
+            checkbox.checked = allSelected;
+            checkbox.indeterminate = selected > 0 && selected < checkboxes.length;
+        });
+    };
+
+    checkboxes.forEach((checkbox) => {
+        checkbox.addEventListener('change', syncState);
+    });
+
+    selectAllBoxes.forEach((selectAll) => {
+        selectAll.addEventListener('change', function () {
+            checkboxes.forEach((checkbox) => {
+                checkbox.checked = selectAll.checked;
+            });
+            syncState();
+        });
+    });
+
+    actionButton.addEventListener('click', function () {
+        const selectedIds = checkboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value);
+        if (selectedIds.length === 0) {
+            return;
+        }
+        const confirmMessage = actionButton.getAttribute('data-confirm-message') || 'Xác nhận thao tác hàng loạt?';
+        if (!window.confirm(confirmMessage)) {
+            return;
+        }
+        const formId = actionButton.getAttribute('data-form-id') || '';
+        const form = document.getElementById(formId);
+        if (!form) {
+            return;
+        }
+
+        form.querySelectorAll('input[name="ids[]"]').forEach((input) => input.remove());
+        selectedIds.forEach((id) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'ids[]';
+            input.value = id;
+            form.appendChild(input);
+        });
+        form.submit();
+    });
+
+    syncState();
 }());
 </script>
 <?php
