@@ -28,41 +28,35 @@ $stmt = $pdo->prepare("
         v.plate_number,
         v.vehicle_name,
         v.status,
-        COALESCE(f.total_liters, 0) AS total_liters,
-        COALESCE(f.total_fuel_amount, 0) AS total_fuel_amount,
-        COALESCE(m.total_maintenance_amount, 0) AS total_maintenance_amount,
-        COALESCE(t.total_km, 0) AS total_km,
-        COALESCE(t.total_toll_fee, 0) AS total_toll_fee
-    FROM vehicles v
-    LEFT JOIN (
-        SELECT
-            vehicle_id,
-            SUM(COALESCE(liters, 0)) AS total_liters,
-            SUM(COALESCE(amount, 0)) AS total_fuel_amount
-        FROM vehicle_fuel
-        WHERE fuel_date BETWEEN ? AND ?
-        GROUP BY vehicle_id
-    ) f ON f.vehicle_id = v.id
-    LEFT JOIN (
-        SELECT
-            vehicle_id,
-            SUM(COALESCE(amount, 0)) AS total_maintenance_amount
-        FROM vehicle_maintenance
-        WHERE maintenance_date BETWEEN ? AND ?
-        GROUP BY vehicle_id
-    ) m ON m.vehicle_id = v.id
-    LEFT JOIN (
-        SELECT
-            vehicle_id,
-            SUM(CASE
-                WHEN km_start IS NOT NULL AND km_end IS NOT NULL AND km_end >= km_start THEN km_end - km_start
+        COALESCE((
+            SELECT SUM(COALESCE(vf.liters, 0))
+            FROM vehicle_fuel vf
+            WHERE vf.vehicle_id = v.id AND vf.fuel_date BETWEEN ? AND ?
+        ), 0) AS total_liters,
+        COALESCE((
+            SELECT SUM(COALESCE(vf.amount, 0))
+            FROM vehicle_fuel vf
+            WHERE vf.vehicle_id = v.id AND vf.fuel_date BETWEEN ? AND ?
+        ), 0) AS total_fuel_amount,
+        COALESCE((
+            SELECT SUM(COALESCE(vm.amount, 0))
+            FROM vehicle_maintenance vm
+            WHERE vm.vehicle_id = v.id AND vm.maintenance_date BETWEEN ? AND ?
+        ), 0) AS total_maintenance_amount,
+        COALESCE((
+            SELECT SUM(CASE
+                WHEN vt.km_start IS NOT NULL AND vt.km_end IS NOT NULL AND vt.km_end >= vt.km_start THEN vt.km_end - vt.km_start
                 ELSE 0
-            END) AS total_km,
-            SUM(COALESCE(toll_fee, 0)) AS total_toll_fee
-        FROM vehicle_trips
-        WHERE trip_date BETWEEN ? AND ?
-        GROUP BY vehicle_id
-    ) t ON t.vehicle_id = v.id
+            END)
+            FROM vehicle_trips vt
+            WHERE vt.vehicle_id = v.id AND vt.trip_date BETWEEN ? AND ?
+        ), 0) AS total_km,
+        COALESCE((
+            SELECT SUM(COALESCE(vt.toll_fee, 0))
+            FROM vehicle_trips vt
+            WHERE vt.vehicle_id = v.id AND vt.trip_date BETWEEN ? AND ?
+        ), 0) AS total_toll_fee
+    FROM vehicles v
     ORDER BY
         CASE v.status
             WHEN 'active' THEN 0
@@ -72,7 +66,13 @@ $stmt = $pdo->prepare("
         v.plate_number ASC,
         v.id DESC
 ");
-$stmt->execute([$monthStart, $monthEnd, $monthStart, $monthEnd, $monthStart, $monthEnd]);
+$stmt->execute([
+    $monthStart, $monthEnd,
+    $monthStart, $monthEnd,
+    $monthStart, $monthEnd,
+    $monthStart, $monthEnd,
+    $monthStart, $monthEnd,
+]);
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $reportRows = [];
