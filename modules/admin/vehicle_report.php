@@ -22,40 +22,13 @@ $reportPageUrl = static function (array $overrides = []) use ($filterMonth): str
     return 'modules/admin/vehicle_report.php?' . http_build_query($params);
 };
 
-$stmt = $pdo->prepare("
-    SELECT
+$rows = fetchAllSafe(
+    $pdo,
+    "SELECT
         v.id,
         v.plate_number,
         v.vehicle_name,
-        v.status,
-        COALESCE((
-            SELECT SUM(COALESCE(vf.liters, 0))
-            FROM vehicle_fuel vf
-            WHERE vf.vehicle_id = v.id AND vf.fuel_date BETWEEN ? AND ?
-        ), 0) AS total_liters,
-        COALESCE((
-            SELECT SUM(COALESCE(vf.amount, 0))
-            FROM vehicle_fuel vf
-            WHERE vf.vehicle_id = v.id AND vf.fuel_date BETWEEN ? AND ?
-        ), 0) AS total_fuel_amount,
-        COALESCE((
-            SELECT SUM(COALESCE(vm.amount, 0))
-            FROM vehicle_maintenance vm
-            WHERE vm.vehicle_id = v.id AND vm.maintenance_date BETWEEN ? AND ?
-        ), 0) AS total_maintenance_amount,
-        COALESCE((
-            SELECT SUM(CASE
-                WHEN vt.km_start IS NOT NULL AND vt.km_end IS NOT NULL AND vt.km_end >= vt.km_start THEN vt.km_end - vt.km_start
-                ELSE 0
-            END)
-            FROM vehicle_trips vt
-            WHERE vt.vehicle_id = v.id AND vt.trip_date BETWEEN ? AND ?
-        ), 0) AS total_km,
-        COALESCE((
-            SELECT SUM(COALESCE(vt.toll_fee, 0))
-            FROM vehicle_trips vt
-            WHERE vt.vehicle_id = v.id AND vt.trip_date BETWEEN ? AND ?
-        ), 0) AS total_toll_fee
+        v.status
     FROM vehicles v
     ORDER BY
         CASE v.status
@@ -64,16 +37,64 @@ $stmt = $pdo->prepare("
             ELSE 2
         END,
         v.plate_number ASC,
-        v.id DESC
-");
-$stmt->execute([
-    $monthStart, $monthEnd,
-    $monthStart, $monthEnd,
-    $monthStart, $monthEnd,
-    $monthStart, $monthEnd,
-    $monthStart, $monthEnd,
-]);
-$rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        v.id DESC"
+);
+
+$fuelByVehicle = [];
+$maintenanceByVehicle = [];
+$tripByVehicle = [];
+
+if ($rows) {
+    $vehicleIds = array_map(static fn(array $row): int => (int)$row['id'], $rows);
+    $placeholders = implode(',', array_fill(0, count($vehicleIds), '?'));
+
+    $fuelRows = fetchAllSafe(
+        $pdo,
+        "SELECT
+            vehicle_id,
+            SUM(COALESCE(liters, 0)) AS total_liters,
+            SUM(COALESCE(amount, 0)) AS total_fuel_amount
+        FROM vehicle_fuel
+        WHERE vehicle_id IN ($placeholders) AND fuel_date BETWEEN ? AND ?
+        GROUP BY vehicle_id",
+        array_merge($vehicleIds, [$monthStart, $monthEnd])
+    );
+    foreach ($fuelRows as $fuelRow) {
+        $fuelByVehicle[(int)$fuelRow['vehicle_id']] = $fuelRow;
+    }
+
+    $maintenanceRows = fetchAllSafe(
+        $pdo,
+        "SELECT
+            vehicle_id,
+            SUM(COALESCE(amount, 0)) AS total_maintenance_amount
+        FROM vehicle_maintenance
+        WHERE vehicle_id IN ($placeholders) AND maintenance_date BETWEEN ? AND ?
+        GROUP BY vehicle_id",
+        array_merge($vehicleIds, [$monthStart, $monthEnd])
+    );
+    foreach ($maintenanceRows as $maintenanceRow) {
+        $maintenanceByVehicle[(int)$maintenanceRow['vehicle_id']] = $maintenanceRow;
+    }
+
+    $tripRows = fetchAllSafe(
+        $pdo,
+        "SELECT
+            vehicle_id,
+            SUM(CASE
+                WHEN km_start IS NOT NULL AND km_end IS NOT NULL AND km_end >= km_start THEN km_end - km_start
+                ELSE 0
+            END) AS total_km,
+            SUM(COALESCE(toll_fee, 0)) AS total_toll_fee
+        FROM vehicle_trips
+        WHERE vehicle_id IN ($placeholders) AND trip_date BETWEEN ? AND ?
+        GROUP BY vehicle_id",
+        array_merge($vehicleIds, [$monthStart, $monthEnd])
+    );
+    foreach ($tripRows as $tripRow) {
+        $tripByVehicle[(int)$tripRow['vehicle_id']] = $tripRow;
+    }
+}
 
 $reportRows = [];
 $totalLiters = 0.0;
@@ -82,11 +103,15 @@ $totalCost = 0.0;
 $hasMonthlyActivity = false;
 
 foreach ($rows as $row) {
-    $liters = (float)($row['total_liters'] ?? 0);
-    $km = (int)round((float)($row['total_km'] ?? 0));
-    $totalVehicleCost = (float)($row['total_fuel_amount'] ?? 0)
-        + (float)($row['total_maintenance_amount'] ?? 0)
-        + (float)($row['total_toll_fee'] ?? 0);
+    $vehicleId = (int)$row['id'];
+    $fuelData = $fuelByVehicle[$vehicleId] ?? null;
+    $maintenanceData = $maintenanceByVehicle[$vehicleId] ?? null;
+    $tripData = $tripByVehicle[$vehicleId] ?? null;
+    $liters = (float)($fuelData['total_liters'] ?? 0);
+    $km = (int)round((float)($tripData['total_km'] ?? 0));
+    $totalVehicleCost = (float)($fuelData['total_fuel_amount'] ?? 0)
+        + (float)($maintenanceData['total_maintenance_amount'] ?? 0)
+        + (float)($tripData['total_toll_fee'] ?? 0);
 
     $reportRows[] = [
         'plate_number' => $row['plate_number'],
