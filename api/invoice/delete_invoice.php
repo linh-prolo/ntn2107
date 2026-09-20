@@ -22,7 +22,7 @@ try {
     $pdo->beginTransaction();
 
     $stmt = $pdo->prepare("
-        SELECT id, invoice_no, bkav_invoice_no, bkav_status, bkav_raw_response, is_locked
+        SELECT id, invoice_no, status, bkav_invoice_no, bkav_status, bkav_raw_response, is_locked
         FROM invoices
         WHERE id = ?
         FOR UPDATE
@@ -43,6 +43,10 @@ try {
     if (!empty($invoice['is_locked'])) {
         $pdo->rollBack();
         echo json_encode(['ok' => false, 'msg' => 'Hoá đơn đã bị khoá, không thể xoá']); exit;
+    }
+    if (($invoice['status'] ?? '') !== 'unpaid') {
+        $pdo->rollBack();
+        echo json_encode(['ok' => false, 'msg' => 'Chỉ được xoá hoá đơn chưa thanh toán']); exit;
     }
 
     $paymentCheck = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE invoice_id = ?");

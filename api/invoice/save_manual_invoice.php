@@ -73,7 +73,7 @@ try {
         throw new RuntimeException('Không thể khoá thao tác lưu hoá đơn thủ công');
     }
 
-    $dupStmt = $pdo->prepare("SELECT id FROM invoices WHERE TRIM(bkav_invoice_no) = ? LIMIT 1 FOR UPDATE");
+    $dupStmt = $pdo->prepare("SELECT id FROM invoices WHERE TRIM(bkav_invoice_no) = TRIM(?) LIMIT 1 FOR UPDATE");
     $dupStmt->execute([$bkavInvoiceNo]);
     if ($dupStmt->fetchColumn()) {
         $releaseStmt->execute([$lockName]);
