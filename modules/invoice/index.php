@@ -168,6 +168,8 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <?php foreach ($invoices as $inv):
                             $debt    = $inv['total_amount'] - $inv['paid_amount'];
                             $overdue = $inv['due_date'] && $inv['status'] !== 'paid' && $inv['status'] !== 'draft' && $inv['due_date'] < date('Y-m-d');
+                            $bkavMeta = json_decode($inv['bkav_raw_response'] ?? '', true);
+                            $isManualEntry = is_array($bkavMeta) && (($bkavMeta['source'] ?? '') === 'manual_entry');
                         ?>
                         <tr class="<?= $overdue ? 'table-danger' : '' ?>"
                             style="cursor:pointer"
@@ -251,7 +253,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                    onclick="event.stopPropagation()">
                                     <i class="fas fa-print"></i>
                                 </a>
-                                <?php if (!$bkavIssued && empty($inv['is_locked'])): ?>
+                                <?php if ((!$bkavIssued && empty($inv['is_locked'])) || $isManualEntry): ?>
                                 <button class="btn btn-sm btn-outline-danger btn-delete-invoice"
                                         data-id="<?= $inv['id'] ?>"
                                         data-no="<?= htmlspecialchars($inv['invoice_no']) ?>"

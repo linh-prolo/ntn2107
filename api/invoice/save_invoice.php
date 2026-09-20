@@ -63,33 +63,46 @@ if ($id) {
 
 try {
     $pdo->beginTransaction();
+    $lockName = 'invoice_create';
+    $lockStmt = $pdo->prepare("SELECT GET_LOCK(?, 10)");
+    $releaseStmt = $pdo->prepare("SELECT RELEASE_LOCK(?)");
 
     // Sinh số HĐ INV-YYYYMMDD-XXX
+    $lockStmt->execute([$lockName]);
+    if ((int)$lockStmt->fetchColumn() !== 1) {
+        throw new RuntimeException('Không thể khoá thao tác tạo hoá đơn');
+    }
     $pdo->prepare("
         INSERT INTO document_sequences (doc_type, doc_date, last_seq) VALUES ('INV',?,1)
         ON DUPLICATE KEY UPDATE last_seq = last_seq + 1
     ")->execute([$invoiceDate]);
-    $seq = $pdo->query("
-        SELECT last_seq FROM document_sequences WHERE doc_type='INV' AND doc_date='$invoiceDate'
-    ")->fetchColumn();
+    $seqStmt = $pdo->prepare("
+        SELECT last_seq FROM document_sequences WHERE doc_type='INV' AND doc_date=?
+    ");
+    $seqStmt->execute([$invoiceDate]);
+    $seq = $seqStmt->fetchColumn();
     $invoiceNo = 'INV-' . date('Ymd', strtotime($invoiceDate)) . '-' . str_pad($seq, 3, '0', STR_PAD_LEFT);
 
     $subtotal    = array_sum(array_column($validItems, 'total_price'));
     $vatAmount   = round($subtotal * $vatRate / 100);
     $totalAmount = $subtotal + $vatAmount;
+    $invoiceMeta = !empty($deliveryIds)
+        ? json_encode(['source' => 'oqc', 'delivery_ids' => $deliveryIds], JSON_UNESCAPED_UNICODE)
+        : null;
 
     // Insert invoice header
     $pdo->prepare("
         INSERT INTO invoices
             (invoice_no, invoice_date, due_date, customer_id,
              subtotal, vat_rate, vat_amount, total_amount,
-             delivery_id, note, status, created_by)
-        VALUES (?,?,?,?,?,?,?,?,?,?,'unpaid',?)
+             delivery_id, note, status, created_by, bkav_raw_response)
+        VALUES (?,?,?,?,?,?,?,?,?,?,'unpaid',?,?)
     ")->execute([
         $invoiceNo, $invoiceDate, $dueDate, $customerId,
         $subtotal, $vatRate, $vatAmount, $totalAmount,
-        null, $note, $user['id']
+        null, $note, $user['id'], $invoiceMeta
     ]);
+    $releaseStmt->execute([$lockName]);
     $invoiceId = $pdo->lastInsertId();
 
     // Insert items
@@ -119,7 +132,15 @@ try {
     echo json_encode(['ok'=>true,'msg'=>'Đã tạo hoá đơn','invoice_no'=>$invoiceNo,'id'=>$invoiceId]);
 
 } catch (Throwable $e) {
-    $pdo->rollBack();
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    if (!empty($releaseStmt) && !empty($lockName)) {
+        try {
+            $releaseStmt->execute([$lockName]);
+        } catch (Throwable $releaseErr) {
+        }
+    }
     error_log($e->getMessage());
     echo json_encode(['ok'=>false,'msg'=>'Lỗi hệ thống: '.$e->getMessage()]);
 }

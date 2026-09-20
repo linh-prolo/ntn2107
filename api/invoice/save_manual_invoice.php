@@ -62,14 +62,24 @@ if (!$custStmt->fetchColumn()) {
     echo json_encode(['ok' => false, 'msg' => 'Khách hàng không tồn tại hoặc đã ngưng hoạt động']); exit;
 }
 
-$dupStmt = $pdo->prepare("SELECT id FROM invoices WHERE bkav_invoice_no = ? LIMIT 1");
-$dupStmt->execute([$bkavInvoiceNo]);
-if ($dupStmt->fetchColumn()) {
-    echo json_encode(['ok' => false, 'msg' => 'Số hoá đơn này đã tồn tại']); exit;
-}
-
 try {
     $pdo->beginTransaction();
+
+    $lockName = 'invoice_create';
+    $lockStmt = $pdo->prepare("SELECT GET_LOCK(?, 10)");
+    $releaseStmt = $pdo->prepare("SELECT RELEASE_LOCK(?)");
+    $lockStmt->execute([$lockName]);
+    if ((int)$lockStmt->fetchColumn() !== 1) {
+        throw new RuntimeException('Không thể khoá thao tác lưu hoá đơn thủ công');
+    }
+
+    $dupStmt = $pdo->prepare("SELECT id FROM invoices WHERE bkav_invoice_no = ? LIMIT 1 FOR UPDATE");
+    $dupStmt->execute([$bkavInvoiceNo]);
+    if ($dupStmt->fetchColumn()) {
+        $releaseStmt->execute([$lockName]);
+        $pdo->rollBack();
+        echo json_encode(['ok' => false, 'msg' => 'Số hoá đơn này đã tồn tại']); exit;
+    }
 
     $pdo->prepare("
         INSERT INTO document_sequences (doc_type, doc_date, last_seq) VALUES ('INV',?,1)
@@ -85,9 +95,9 @@ try {
     $pdo->prepare("
         INSERT INTO invoices
             (invoice_no, invoice_date, customer_id, subtotal, vat_rate, vat_amount, total_amount,
-             note, status, created_by, bkav_invoice_no, bkav_status, bkav_issued_at,
+             note, status, created_by, bkav_invoice_no, bkav_status, bkav_issued_at, bkav_raw_response,
              is_locked, locked_bkav_no, locked_bkav_date, locked_at, locked_by)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NOW(),1,?,?,NOW(),?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NOW(),?,1,?,?,NOW(),?)
     ")->execute([
         $invoiceNo,
         $invoiceDate,
@@ -101,6 +111,7 @@ try {
         $user['id'],
         $bkavInvoiceNo,
         'issued',
+        json_encode(['source' => 'manual_entry'], JSON_UNESCAPED_UNICODE),
         $bkavInvoiceNo,
         $invoiceDate,
         $user['id'],
@@ -121,6 +132,7 @@ try {
         ]);
     }
 
+    $releaseStmt->execute([$lockName]);
     $pdo->commit();
     echo json_encode([
         'ok' => true,
@@ -131,6 +143,12 @@ try {
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
+    }
+    if (!empty($releaseStmt) && !empty($lockName)) {
+        try {
+            $releaseStmt->execute([$lockName]);
+        } catch (Throwable $releaseErr) {
+        }
     }
     error_log($e->getMessage());
     echo json_encode(['ok' => false, 'msg' => 'Lỗi hệ thống']);
