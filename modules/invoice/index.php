@@ -1098,6 +1098,10 @@ document.getElementById('btnSaveManualInvoice').addEventListener('click', () => 
     const totalAmount   = Math.round(subtotal * (1 + vatRate / 100));
     const paidAmount    = parseFloat(document.getElementById('manualPaidAmount').value) || 0;
 
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
     if (!bkavInvoiceNo) { alert('Vui lòng nhập số hoá đơn!'); return; }
     if (!invoiceDate) { alert('Vui lòng nhập ngày hoá đơn!'); return; }
     if (!customerId) { alert('Vui lòng chọn khách hàng!'); return; }

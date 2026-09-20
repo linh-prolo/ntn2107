@@ -22,7 +22,7 @@ try {
     $pdo->beginTransaction();
 
     $stmt = $pdo->prepare("
-        SELECT id, invoice_no, delivery_id, bkav_invoice_no, bkav_status, bkav_raw_response, is_locked
+        SELECT id, invoice_no, bkav_invoice_no, bkav_status, bkav_raw_response, is_locked
         FROM invoices
         WHERE id = ?
         FOR UPDATE
@@ -66,8 +66,32 @@ try {
         $deliveryIds = array_values(array_unique(array_filter(array_map('intval', $bkavMeta['delivery_ids']))));
     }
     if (!empty($deliveryIds)) {
-        $ph = implode(',', array_fill(0, count($deliveryIds), '?'));
-        $pdo->prepare("UPDATE oqc_deliveries SET status='draft' WHERE id IN ($ph)")->execute($deliveryIds);
+        $otherInvoices = $pdo->prepare("
+            SELECT bkav_raw_response
+            FROM invoices
+            WHERE id <> ? AND bkav_raw_response IS NOT NULL AND bkav_raw_response <> ''
+        ");
+        $otherInvoices->execute([$invoiceId]);
+
+        $stillLinked = [];
+        foreach ($otherInvoices->fetchAll(PDO::FETCH_COLUMN) as $rawMeta) {
+            $otherMeta = json_decode($rawMeta, true);
+            if (!is_array($otherMeta) || ($otherMeta['source'] ?? '') !== 'oqc' || empty($otherMeta['delivery_ids']) || !is_array($otherMeta['delivery_ids'])) {
+                continue;
+            }
+            foreach ($otherMeta['delivery_ids'] as $otherDeliveryId) {
+                $otherDeliveryId = (int)$otherDeliveryId;
+                if ($otherDeliveryId > 0) {
+                    $stillLinked[$otherDeliveryId] = true;
+                }
+            }
+        }
+
+        $reopenDeliveryIds = array_values(array_filter($deliveryIds, static fn($id) => empty($stillLinked[$id])));
+        if (!empty($reopenDeliveryIds)) {
+            $ph = implode(',', array_fill(0, count($reopenDeliveryIds), '?'));
+            $pdo->prepare("UPDATE oqc_deliveries SET status='draft' WHERE id IN ($ph)")->execute($reopenDeliveryIds);
+        }
     }
 
     $pdo->prepare("DELETE FROM debt_tracking WHERE invoice_id = ?")->execute([$invoiceId]);
