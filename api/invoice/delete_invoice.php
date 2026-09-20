@@ -43,9 +43,9 @@ try {
         $pdo->rollBack();
         echo json_encode(['ok' => false, 'msg' => 'Hoá đơn đã bị khoá, không thể xoá']); exit;
     }
-    if (($invoice['status'] ?? '') !== 'unpaid') {
+    if (!in_array(($invoice['status'] ?? ''), ['draft', 'unpaid'], true)) {
         $pdo->rollBack();
-        echo json_encode(['ok' => false, 'msg' => 'Chỉ được xoá hoá đơn chưa thanh toán']); exit;
+        echo json_encode(['ok' => false, 'msg' => 'Chỉ được xoá hoá đơn chưa xuất hoặc chưa thanh toán']); exit;
     }
 
     $paymentCheck = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE invoice_id = ?");

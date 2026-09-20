@@ -76,9 +76,7 @@ try {
     $dupStmt = $pdo->prepare("SELECT id FROM invoices WHERE bkav_invoice_no = ? LIMIT 1 FOR UPDATE");
     $dupStmt->execute([$bkavInvoiceNo]);
     if ($dupStmt->fetchColumn()) {
-        $releaseStmt->execute([$lockName]);
-        $pdo->rollBack();
-        echo json_encode(['ok' => false, 'msg' => 'Số hoá đơn này đã tồn tại']); exit;
+        throw new RuntimeException('MANUAL_INVOICE_DUPLICATE');
     }
 
     $pdo->prepare("
@@ -99,7 +97,7 @@ try {
              is_locked, locked_bkav_no, locked_bkav_date, locked_at, locked_by)
         VALUES (
             ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, NOW(),
+            ?, ?, ?, NOW(),
             1, ?, ?, NOW(), ?
         )
     ")->execute([
@@ -152,6 +150,9 @@ try {
             $releaseStmt->execute([$lockName]);
         } catch (Throwable $releaseErr) {
         }
+    }
+    if ($e instanceof RuntimeException && $e->getMessage() === 'MANUAL_INVOICE_DUPLICATE') {
+        echo json_encode(['ok' => false, 'msg' => 'Số hoá đơn này đã tồn tại']); exit;
     }
     error_log($e->getMessage());
     echo json_encode(['ok' => false, 'msg' => 'Lỗi hệ thống']);
