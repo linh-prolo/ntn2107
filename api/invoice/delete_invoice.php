@@ -22,7 +22,7 @@ try {
     $pdo->beginTransaction();
 
     $stmt = $pdo->prepare("
-        SELECT id, invoice_no, bkav_invoice_no, bkav_status, bkav_raw_response, is_locked
+        SELECT id, invoice_no, bkav_invoice_no, bkav_status, bkav_raw_response, is_locked, confirmed_by, confirmed_at
         FROM invoices
         WHERE id = ?
         FOR UPDATE
@@ -37,7 +37,7 @@ try {
 
     $bkavIssued = !empty($invoice['bkav_invoice_no']) || (($invoice['bkav_status'] ?? '') === 'issued');
     $bkavMeta = json_decode($invoice['bkav_raw_response'] ?? '', true);
-    $isManualEntry = is_array($bkavMeta) && (($bkavMeta['source'] ?? '') === 'manual_entry');
+    $isManualEntry = !empty($invoice['confirmed_by']) && !empty($invoice['confirmed_at']) && !empty($invoice['bkav_invoice_no']) && !empty($invoice['is_locked']);
     if ($bkavIssued && !$isManualEntry) {
         $pdo->rollBack();
         echo json_encode(['ok' => false, 'msg' => 'Hoá đơn đã xuất BKAV, không thể xoá']); exit;

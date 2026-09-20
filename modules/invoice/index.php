@@ -168,8 +168,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <?php foreach ($invoices as $inv):
                             $debt    = $inv['total_amount'] - $inv['paid_amount'];
                             $overdue = $inv['due_date'] && $inv['status'] !== 'paid' && $inv['status'] !== 'draft' && $inv['due_date'] < date('Y-m-d');
-                            $bkavMeta = json_decode($inv['bkav_raw_response'] ?? '', true);
-                            $isManualEntry = is_array($bkavMeta) && (($bkavMeta['source'] ?? '') === 'manual_entry');
+                            $isManualEntry = !empty($inv['confirmed_by']) && !empty($inv['confirmed_at']) && !empty($inv['bkav_invoice_no']) && !empty($inv['is_locked']);
                         ?>
                         <tr class="<?= $overdue ? 'table-danger' : '' ?>"
                             style="cursor:pointer"
