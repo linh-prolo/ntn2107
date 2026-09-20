@@ -79,6 +79,7 @@ $reportRows = [];
 $totalLiters = 0.0;
 $totalKm = 0;
 $totalCost = 0.0;
+$hasMonthlyActivity = false;
 
 foreach ($rows as $row) {
     $liters = (float)($row['total_liters'] ?? 0);
@@ -100,6 +101,9 @@ foreach ($rows as $row) {
     $totalLiters += $liters;
     $totalKm += $km;
     $totalCost += $totalVehicleCost;
+    if ($liters > 0 || $km > 0 || $totalVehicleCost > 0) {
+        $hasMonthlyActivity = true;
+    }
 }
 
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/header.php';
@@ -168,6 +172,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <div class="fw-semibold">Danh sách chi phí theo xe</div>
                 <div class="text-muted small">Hiển thị toàn bộ xe để đối chiếu tổng quan, kể cả xe không có phát sinh trong tháng.</div>
             </div>
+            <?php if ($reportRows && !$hasMonthlyActivity): ?>
+                <div class="alert alert-info rounded-0 border-0 border-bottom mb-0">
+                    Không có phát sinh chi phí, đổ dầu hoặc chuyến đi nào trong tháng đã chọn. Bảng dưới vẫn hiển thị toàn bộ xe để đối chiếu.
+                </div>
+            <?php endif; ?>
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-dark">
@@ -182,7 +191,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     </tr>
                     </thead>
                     <tbody>
-                    <?php if (!$reportRows): ?>
+                    <?php if (!$rows): ?>
                         <tr>
                             <td colspan="7" class="text-center text-muted py-4">Chưa có phương tiện nào.</td>
                         </tr>
