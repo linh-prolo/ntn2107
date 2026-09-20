@@ -11,9 +11,12 @@ $statusMap = [
     'maintenance' => ['bg-warning text-dark', 'Bảo dưỡng'],
     'disposed' => ['bg-secondary', 'Thanh lý'],
 ];
-$filterMonth = preg_match('/^\d{4}-\d{2}$/', $_GET['month'] ?? '') ? $_GET['month'] : date('Y-m');
-$monthStart = $filterMonth . '-01';
-$monthEnd = date('Y-m-t', strtotime($monthStart));
+$requestedMonth = trim($_GET['month'] ?? '');
+$filterMonthDate = DateTime::createFromFormat('!Y-m', $requestedMonth);
+$filterMonth = ($filterMonthDate && $filterMonthDate->format('Y-m') === $requestedMonth) ? $requestedMonth : date('Y-m');
+$monthDate = DateTime::createFromFormat('!Y-m', $filterMonth);
+$monthStart = $monthDate->format('Y-m-01');
+$monthEnd = $monthDate->format('Y-m-t');
 
 $reportPageUrl = static function (array $overrides = []) use ($filterMonth): string {
     $params = [
