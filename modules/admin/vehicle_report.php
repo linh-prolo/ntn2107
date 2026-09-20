@@ -221,7 +221,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <tbody>
                     <?php if (!$rows): ?>
                         <tr>
-                            <td colspan="7" class="text-center text-muted py-4">Chưa có phương tiện nào.</td>
+                            <td colspan="8" class="text-center text-muted py-4">Chưa có phương tiện nào.</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($reportRows as $reportRow): ?>
