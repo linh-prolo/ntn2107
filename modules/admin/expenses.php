@@ -333,13 +333,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             setFlash('danger', 'Không tìm thấy đề xuất.');
         } elseif (!in_array($expense['status'], ['draft', 'rejected'], true)) {
             setFlash('danger', 'Chỉ có thể xoá đề xuất ở trạng thái nháp hoặc bị từ chối.');
-        } elseif ((int)$expense['requested_by'] !== currentUserId()) {
+        } elseif (
+            ($expense['status'] === 'draft' && (int)$expense['requested_by'] !== currentUserId())
+            || ($expense['status'] === 'rejected' && (int)$expense['requested_by'] !== currentUserId() && !$canApprove)
+        ) {
             setFlash('danger', 'Bạn không có quyền xoá đề xuất này.');
         } else {
             $pdo->prepare('DELETE FROM expense_requests WHERE id = ?')->execute([$expenseId]);
             setFlash('success', 'Đã xoá đề xuất chi phí.');
         }
-        redirect($expensePageUrl(['tab' => 'mine']));
+        redirect($expensePageUrl(['tab' => $activeTab]));
     }
 
     if ($action === 'approve') {
@@ -1100,7 +1103,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                                 </form>
                                             <?php endif; ?>
 
-                                            <?php if ($expense['status'] === 'rejected' && (int)$expense['requested_by'] === currentUserId()): ?>
+                                            <?php if ($expense['status'] === 'rejected' && ((int)$expense['requested_by'] === currentUserId() || $canApprove)): ?>
                                                 <form method="post" class="d-inline">
                                                     <?= csrfInput() ?>
                                                     <input type="hidden" name="action" value="delete">
