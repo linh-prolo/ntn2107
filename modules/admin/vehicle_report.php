@@ -7,9 +7,9 @@ requireRole('director', 'accountant', 'manager');
 
 $pdo = getDBConnection();
 $statusMap = [
-    'active' => ['success', 'Đang dùng'],
-    'maintenance' => ['warning text-dark', 'Bảo dưỡng'],
-    'disposed' => ['secondary', 'Thanh lý'],
+    'active' => ['bg-success', 'Đang dùng'],
+    'maintenance' => ['bg-warning text-dark', 'Bảo dưỡng'],
+    'disposed' => ['bg-secondary', 'Thanh lý'],
 ];
 $filterMonth = preg_match('/^\d{4}-\d{2}$/', $_GET['month'] ?? '') ? $_GET['month'] : date('Y-m');
 $monthStart = $filterMonth . '-01';
@@ -188,11 +188,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         </tr>
                     <?php else: ?>
                         <?php foreach ($reportRows as $reportRow): ?>
-                            <?php [$badgeClass, $statusLabel] = $statusMap[$reportRow['status']] ?? ['secondary', $reportRow['status'] ?: '—']; ?>
+                            <?php [$badgeClass, $statusLabel] = $statusMap[$reportRow['status']] ?? ['bg-secondary', $reportRow['status'] ?: '—']; ?>
                             <tr>
                                 <td class="fw-semibold text-primary"><?= e($reportRow['plate_number']) ?></td>
                                 <td><?= e($reportRow['vehicle_name']) ?></td>
-                                <td><span class="badge bg-<?= $badgeClass ?>"><?= e($statusLabel) ?></span></td>
+                                <td><span class="badge <?= e($badgeClass) ?>"><?= e($statusLabel) ?></span></td>
                                 <td class="text-end"><?= e(number_format($reportRow['total_liters'], 2, ',', '.')) ?></td>
                                 <td class="text-end"><?= e(number_format($reportRow['total_km'], 0, ',', '.')) ?></td>
                                 <td class="text-end"><?= $reportRow['avg_consumption'] !== null ? e(number_format($reportRow['avg_consumption'], 2, ',', '.')) : '—' ?></td>
