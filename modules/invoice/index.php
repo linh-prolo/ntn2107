@@ -168,7 +168,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <?php foreach ($invoices as $inv):
                             $debt    = $inv['total_amount'] - $inv['paid_amount'];
                             $overdue = $inv['due_date'] && $inv['status'] !== 'paid' && $inv['status'] !== 'draft' && $inv['due_date'] < date('Y-m-d');
-                            $isManualEntry = !empty($inv['confirmed_by']) && !empty($inv['confirmed_at']) && !empty($inv['bkav_invoice_no']) && !empty($inv['is_locked']);
+                            $isManualEntry = isManualInvoiceRecord($inv);
                         ?>
                         <tr class="<?= $overdue ? 'table-danger' : '' ?>"
                             style="cursor:pointer"
@@ -478,7 +478,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         </div>
                     </div>
                     <div class="mt-3">
-                        <label class="form-label fw-semibold">Thành tổng tiền</label>
+                        <label class="form-label fw-semibold">Tổng tiền thanh toán</label>
                         <input type="text" id="manualTotalAmount" class="form-control bg-light" readonly value="0 đ">
                     </div>
                     <div class="mt-3">
