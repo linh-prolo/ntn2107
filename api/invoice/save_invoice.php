@@ -63,15 +63,24 @@ if ($id) {
 
 try {
     $pdo->beginTransaction();
+    $lockName = 'invoice_create';
+    $lockStmt = $pdo->prepare("SELECT GET_LOCK(?, 10)");
+    $releaseStmt = $pdo->prepare("SELECT RELEASE_LOCK(?)");
 
     // Sinh số HĐ INV-YYYYMMDD-XXX
+    $lockStmt->execute([$lockName]);
+    if ((int)$lockStmt->fetchColumn() !== 1) {
+        throw new RuntimeException('Không thể khoá thao tác tạo hoá đơn');
+    }
     $pdo->prepare("
         INSERT INTO document_sequences (doc_type, doc_date, last_seq) VALUES ('INV',?,1)
         ON DUPLICATE KEY UPDATE last_seq = last_seq + 1
     ")->execute([$invoiceDate]);
-    $seq = $pdo->query("
-        SELECT last_seq FROM document_sequences WHERE doc_type='INV' AND doc_date='$invoiceDate'
-    ")->fetchColumn();
+    $seqStmt = $pdo->prepare("
+        SELECT last_seq FROM document_sequences WHERE doc_type='INV' AND doc_date=?
+    ");
+    $seqStmt->execute([$invoiceDate]);
+    $seq = $seqStmt->fetchColumn();
     $invoiceNo = 'INV-' . date('Ymd', strtotime($invoiceDate)) . '-' . str_pad($seq, 3, '0', STR_PAD_LEFT);
 
     $subtotal    = array_sum(array_column($validItems, 'total_price'));
@@ -116,10 +125,19 @@ try {
     }
 
     $pdo->commit();
+    $releaseStmt->execute([$lockName]);
     echo json_encode(['ok'=>true,'msg'=>'Đã tạo hoá đơn','invoice_no'=>$invoiceNo,'id'=>$invoiceId]);
 
 } catch (Throwable $e) {
-    $pdo->rollBack();
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    if (!empty($releaseStmt) && !empty($lockName)) {
+        try {
+            $releaseStmt->execute([$lockName]);
+        } catch (Throwable $releaseErr) {
+        }
+    }
     error_log($e->getMessage());
     echo json_encode(['ok'=>false,'msg'=>'Lỗi hệ thống: '.$e->getMessage()]);
 }

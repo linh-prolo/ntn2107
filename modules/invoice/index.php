@@ -32,7 +32,8 @@ $invoices = $pdo->prepare("
            i.is_locked, i.locked_bkav_no, i.locked_bkav_date,
            c.customer_name, c.customer_code,
            u.full_name AS created_by_name,
-           COALESCE(SUM(p.amount),0) AS paid_amount
+           COALESCE(SUM(p.amount),0) AS paid_amount,
+           COUNT(p.id) AS payment_count
     FROM invoices i
     LEFT JOIN customers c  ON i.customer_id  = c.id
     LEFT JOIN users u      ON i.created_by   = u.id
@@ -73,9 +74,14 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
             </h4>
             <p class="text-muted mb-0">Quản lý hoá đơn bán hàng</p>
         </div>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalInvoice">
-            <i class="fas fa-plus me-1"></i> Tạo hoá đơn
-        </button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalManualInvoice">
+                <i class="fas fa-file-circle-plus me-1"></i> Thêm hoá đơn thủ công
+            </button>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalInvoice">
+                <i class="fas fa-plus me-1"></i> Tạo hoá đơn
+            </button>
+        </div>
     </div>
 
     <?php showFlash(); ?>
@@ -246,6 +252,15 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                    onclick="event.stopPropagation()">
                                     <i class="fas fa-print"></i>
                                 </a>
+                                <?php if (in_array($inv['status'], ['draft', 'unpaid'], true) && !$bkavIssued && empty($inv['is_locked']) && (int)$inv['payment_count'] === 0): ?>
+                                <button class="btn btn-sm btn-outline-danger btn-delete-invoice"
+                                        data-id="<?= $inv['id'] ?>"
+                                        data-no="<?= htmlspecialchars($inv['invoice_no']) ?>"
+                                        title="Xoá hoá đơn"
+                                        onclick="event.stopPropagation()">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                                <?php endif; ?>
                                 <?php if (empty($inv['is_locked'])): ?>
                                 <button class="btn btn-sm btn-outline-warning btn-lock"
                                         data-id="<?= $inv['id'] ?>"
@@ -410,6 +425,86 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Huỷ</button>
                 <button type="button" class="btn btn-primary d-none" id="btnSaveInvoice">
                     <i class="fas fa-save me-1"></i>Xác nhận tạo hoá đơn
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============ MODAL THÊM HOÁ ĐƠN THỦ CÔNG ============ -->
+<div class="modal fade" id="modalManualInvoice" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-file-circle-plus me-2"></i>Thêm hoá đơn thủ công
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formManualInvoice">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Số hoá đơn <span class="text-danger">*</span></label>
+                        <input type="text" name="bkav_invoice_no" id="manualInvoiceNo" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Ngày hoá đơn <span class="text-danger">*</span></label>
+                        <input type="date" name="invoice_date" id="manualInvoiceDate" class="form-control"
+                               value="<?= date('Y-m-d') ?>" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Khách hàng <span class="text-danger">*</span></label>
+                        <select name="customer_id" id="manualCustomerSelect" class="form-select" required>
+                            <option value="">-- Chọn khách hàng --</option>
+                            <?php foreach ($customers as $c): ?>
+                            <option value="<?= $c['id'] ?>"
+                                    data-vat="<?= (float)($c['vat_rate'] ?? 8) ?>">
+                                [<?= htmlspecialchars($c['customer_code']) ?>]
+                                <?= htmlspecialchars($c['customer_name']) ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Tổng số tiền (chưa VAT) <span class="text-danger">*</span></label>
+                            <input type="number" name="subtotal" id="manualSubtotal" class="form-control"
+                                   min="1" step="1" placeholder="0" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">% VAT</label>
+                            <input type="number" name="vat_rate" id="manualVatRate" class="form-control"
+                                   value="8" min="0" max="100" step="0.01">
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label fw-semibold">Tổng tiền thanh toán</label>
+                        <input type="text" id="manualTotalAmount" class="form-control bg-light" readonly value="0 đ">
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label fw-semibold">Trạng thái thanh toán</label>
+                        <select name="payment_status" id="manualPaymentStatus" class="form-select">
+                            <option value="unpaid">Chưa thanh toán</option>
+                            <option value="partial">Đã thanh toán 1 phần</option>
+                            <option value="paid">Đã thanh toán</option>
+                        </select>
+                    </div>
+                    <div class="mt-3 d-none" id="manualPaidAmountWrap">
+                        <label class="form-label fw-semibold">Số tiền đã thu <span class="text-danger">*</span></label>
+                        <input type="number" name="paid_amount" id="manualPaidAmount" class="form-control"
+                               min="1" step="1" placeholder="0">
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label fw-semibold">Ghi chú</label>
+                        <input type="text" name="note" id="manualNote" class="form-control"
+                               placeholder="Ví dụ: Hoá đơn xuất tay trên BKAV">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Huỷ</button>
+                <button type="button" class="btn btn-primary" id="btnSaveManualInvoice">
+                    <i class="fas fa-save me-1"></i>Lưu hoá đơn
                 </button>
             </div>
         </div>
@@ -605,6 +700,12 @@ document.getElementById('invCustomerSelect').addEventListener('change', function
     updateTotals();
 });
 
+document.getElementById('manualCustomerSelect').addEventListener('change', function() {
+    const opt = this.options[this.selectedIndex];
+    document.getElementById('manualVatRate').value = opt?.dataset.vat ?? '8';
+    updateManualInvoiceTotal();
+});
+
 // ── Reset modal khi mở lại ──
 document.getElementById('modalInvoice').addEventListener('show.bs.modal', () => {
     document.getElementById('invPreviewArea').classList.add('d-none');
@@ -617,6 +718,16 @@ document.getElementById('modalInvoice').addEventListener('show.bs.modal', () => 
     loadedItems = [];
     loadedDeliveries = [];
     loadedCustomerId = null;
+});
+
+document.getElementById('modalManualInvoice').addEventListener('show.bs.modal', () => {
+    document.getElementById('formManualInvoice').reset();
+    document.getElementById('manualCustomerSelect').value = '';
+    document.getElementById('manualInvoiceDate').value = '<?= date('Y-m-d') ?>';
+    document.getElementById('manualVatRate').value = '8';
+    document.getElementById('manualPaymentStatus').value = 'unpaid';
+    toggleManualPaidAmount();
+    updateManualInvoiceTotal();
 });
 
 // ── Tải dữ liệu khi nhấn nút ──
@@ -940,6 +1051,118 @@ document.getElementById('btnSavePay').addEventListener('click', () => {
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-save me-1"></i>Lưu';
         });
+});
+
+function updateManualInvoiceTotal() {
+    const subtotal = parseFloat(document.getElementById('manualSubtotal').value) || 0;
+    const vatRate  = parseFloat(document.getElementById('manualVatRate').value) || 0;
+    const vatAmt   = Math.round(subtotal * vatRate / 100);
+    document.getElementById('manualTotalAmount').value = fmtMoney(subtotal + vatAmt);
+}
+
+function toggleManualPaidAmount() {
+    const status = document.getElementById('manualPaymentStatus').value;
+    const wrap   = document.getElementById('manualPaidAmountWrap');
+    const input  = document.getElementById('manualPaidAmount');
+    const total  = Math.round((parseFloat(document.getElementById('manualSubtotal').value) || 0) *
+                    (1 + (parseFloat(document.getElementById('manualVatRate').value) || 0) / 100));
+
+    if (status === 'partial') {
+        wrap.classList.remove('d-none');
+        input.required = true;
+    } else {
+        wrap.classList.add('d-none');
+        input.required = false;
+        input.value = status === 'paid' && total > 0 ? total : '';
+    }
+}
+
+document.getElementById('manualSubtotal').addEventListener('input', () => {
+    updateManualInvoiceTotal();
+    toggleManualPaidAmount();
+});
+document.getElementById('manualVatRate').addEventListener('input', () => {
+    updateManualInvoiceTotal();
+    toggleManualPaidAmount();
+});
+document.getElementById('manualPaymentStatus').addEventListener('change', toggleManualPaidAmount);
+
+document.getElementById('btnSaveManualInvoice').addEventListener('click', () => {
+    const form = document.getElementById('formManualInvoice');
+    const bkavInvoiceNo = document.getElementById('manualInvoiceNo').value.trim();
+    const invoiceDate   = document.getElementById('manualInvoiceDate').value;
+    const customerId    = document.getElementById('manualCustomerSelect').value;
+    const subtotal      = parseFloat(document.getElementById('manualSubtotal').value) || 0;
+    const vatRate       = parseFloat(document.getElementById('manualVatRate').value) || 0;
+    const paymentStatus = document.getElementById('manualPaymentStatus').value;
+    const totalAmount   = Math.round(subtotal * (1 + vatRate / 100));
+    const paidAmount    = parseFloat(document.getElementById('manualPaidAmount').value) || 0;
+
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+    if (!bkavInvoiceNo) { alert('Vui lòng nhập số hoá đơn!'); return; }
+    if (!invoiceDate) { alert('Vui lòng nhập ngày hoá đơn!'); return; }
+    if (!customerId) { alert('Vui lòng chọn khách hàng!'); return; }
+    if (subtotal <= 0) { alert('Tổng số tiền chưa VAT phải lớn hơn 0!'); return; }
+    if (vatRate < 0 || vatRate > 100) { alert('VAT phải trong khoảng 0-100%!'); return; }
+    if (paymentStatus === 'partial' && (paidAmount <= 0 || paidAmount >= totalAmount)) {
+        alert('Số tiền đã thu phải lớn hơn 0 và nhỏ hơn tổng tiền!');
+        return;
+    }
+
+    const btn = document.getElementById('btnSaveManualInvoice');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Đang lưu...';
+
+    const fd = new FormData(form);
+    fd.append('csrf_token', CSRF_TOKEN);
+
+    fetch('/erp/api/invoice/save_manual_invoice.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(res => {
+            if (res.ok) {
+                bootstrap.Modal.getInstance(document.getElementById('modalManualInvoice')).hide();
+                location.reload();
+            } else {
+                alert('Lỗi: ' + res.msg);
+            }
+        })
+        .catch(() => alert('Lỗi kết nối!'))
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-save me-1"></i>Lưu hoá đơn';
+        });
+});
+
+document.querySelectorAll('.btn-delete-invoice').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const invoiceNo = btn.dataset.no || '';
+        if (!confirm(`Xoá hoá đơn ${invoiceNo} này? Hành động không thể hoàn tác.`)) return;
+
+        btn.disabled = true;
+        fetch('/erp/api/invoice/delete_invoice.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                invoice_id: parseInt(btn.dataset.id),
+                csrf_token: CSRF_TOKEN
+            })
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (res.ok) {
+                location.reload();
+            } else {
+                alert('Lỗi: ' + res.msg);
+            }
+        })
+        .catch(() => alert('Lỗi kết nối!'))
+        .finally(() => {
+            btn.disabled = false;
+        });
+    });
 });
 
 // ── Helpers ──

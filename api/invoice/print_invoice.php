@@ -112,6 +112,13 @@ $items = $items->fetchAll(PDO::FETCH_ASSOC);
             </tr>
         </thead>
         <tbody>
+        <?php if (empty($items)): ?>
+        <tr>
+            <td colspan="7" class="tc" style="padding:14px 8px;color:#666;">
+                Hoá đơn nhập tay / không có dòng chi tiết từ biên bản giao hàng
+            </td>
+        </tr>
+        <?php else: ?>
         <?php $i=1; foreach($items as $it): ?>
         <tr>
             <td class="tc"><?= $i++ ?></td>
@@ -123,6 +130,7 @@ $items = $items->fetchAll(PDO::FETCH_ASSOC);
             <td class="tr"><?= number_format($it['total_price']) ?></td>
         </tr>
         <?php endforeach; ?>
+        <?php endif; ?>
         </tbody>
     </table>
 

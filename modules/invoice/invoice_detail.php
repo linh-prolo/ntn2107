@@ -122,7 +122,13 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <td><?= $inv['due_date'] ? date('d/m/Y', strtotime($inv['due_date'])) : '—' ?></td></tr>
                         <tr><td class="text-muted">Trạng thái</td>
                             <td><?php
-                                $st = ['draft'=>['secondary','Nháp'],'confirmed'=>['success','Đã xác nhận'],'cancelled'=>['danger','Huỷ']];
+                                $st = [
+                                    'draft'     => ['secondary', 'Chờ xuất'],
+                                    'unpaid'    => ['danger',    'Chưa TT'],
+                                    'partial'   => ['warning',   '1 phần'],
+                                    'paid'      => ['success',   'Đã TT'],
+                                    'cancelled' => ['secondary', 'Huỷ'],
+                                ];
                                 $s  = $st[$inv['status']] ?? ['secondary','?'];
                                 echo "<span class='badge bg-{$s[0]}'>{$s[1]}</span>";
                             ?></td></tr>
@@ -185,6 +191,13 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 </tr>
                             </thead>
                             <tbody>
+                            <?php if (empty($items)): ?>
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-4">
+                                    Hoá đơn nhập tay / không có dòng chi tiết từ biên bản giao hàng
+                                </td>
+                            </tr>
+                            <?php else: ?>
                             <?php $i=1; foreach ($items as $it): ?>
                             <tr>
                                 <td class="text-muted"><?= $i++ ?></td>
@@ -196,6 +209,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <td class="text-end fw-bold text-success"><?= number_format($it['total_price']) ?> đ</td>
                             </tr>
                             <?php endforeach; ?>
+                            <?php endif; ?>
                             </tbody>
                             <tfoot class="table-light">
                                 <tr>
