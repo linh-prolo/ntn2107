@@ -86,21 +86,18 @@ try {
     $subtotal    = array_sum(array_column($validItems, 'total_price'));
     $vatAmount   = round($subtotal * $vatRate / 100);
     $totalAmount = $subtotal + $vatAmount;
-    $invoiceMeta = !empty($deliveryIds)
-        ? json_encode(['source' => 'oqc', 'delivery_ids' => $deliveryIds], JSON_UNESCAPED_UNICODE)
-        : null;
 
     // Insert invoice header
     $pdo->prepare("
         INSERT INTO invoices
             (invoice_no, invoice_date, due_date, customer_id,
              subtotal, vat_rate, vat_amount, total_amount,
-             delivery_id, note, status, created_by, bkav_raw_response)
-        VALUES (?,?,?,?,?,?,?,?,?,?,'unpaid',?,?)
+             delivery_id, note, status, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,'unpaid',?)
     ")->execute([
         $invoiceNo, $invoiceDate, $dueDate, $customerId,
         $subtotal, $vatRate, $vatAmount, $totalAmount,
-        null, $note, $user['id'], $invoiceMeta
+        null, $note, $user['id']
     ]);
     $invoiceId = $pdo->lastInsertId();
 
