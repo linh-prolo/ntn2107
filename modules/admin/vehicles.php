@@ -353,7 +353,12 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <h4 class="mb-1"><i class="fas fa-car me-2 text-primary"></i>Quản lý phương tiện</h4>
                 <p class="text-muted mb-0">Danh sách xe, hồ sơ, đổ dầu, bảo dưỡng và lịch sử sử dụng theo luồng form POST truyền thống.</p>
             </div>
-            <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#vehicle-form-card" aria-expanded="<?= $showForm ? 'true' : 'false' ?>"><i class="fas fa-plus me-1"></i> Thêm xe</button>
+            <div class="d-flex flex-wrap gap-2">
+                <a href="/erp/modules/admin/vehicle_report.php" class="btn btn-outline-secondary">
+                    <i class="fas fa-chart-bar me-1"></i>Báo cáo chi phí xe
+                </a>
+                <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#vehicle-form-card" aria-expanded="<?= $showForm ? 'true' : 'false' ?>"><i class="fas fa-plus me-1"></i> Thêm xe</button>
+            </div>
         </div>
 
         <?php showFlash(); ?>
