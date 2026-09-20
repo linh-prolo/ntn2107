@@ -32,7 +32,8 @@ $invoices = $pdo->prepare("
            i.is_locked, i.locked_bkav_no, i.locked_bkav_date,
            c.customer_name, c.customer_code,
            u.full_name AS created_by_name,
-           COALESCE(SUM(p.amount),0) AS paid_amount
+           COALESCE(SUM(p.amount),0) AS paid_amount,
+           COUNT(p.id) AS payment_count
     FROM invoices i
     LEFT JOIN customers c  ON i.customer_id  = c.id
     LEFT JOIN users u      ON i.created_by   = u.id
@@ -251,7 +252,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                    onclick="event.stopPropagation()">
                                     <i class="fas fa-print"></i>
                                 </a>
-                                <?php if (!$bkavIssued && empty($inv['is_locked']) && (float)$inv['paid_amount'] <= 0): ?>
+                                <?php if (!$bkavIssued && empty($inv['is_locked']) && (int)$inv['payment_count'] === 0): ?>
                                 <button class="btn btn-sm btn-outline-danger btn-delete-invoice"
                                         data-id="<?= $inv['id'] ?>"
                                         data-no="<?= htmlspecialchars($inv['invoice_no']) ?>"

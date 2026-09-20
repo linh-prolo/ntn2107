@@ -97,7 +97,11 @@ try {
             (invoice_no, invoice_date, customer_id, subtotal, vat_rate, vat_amount, total_amount,
              note, status, created_by, confirmed_by, confirmed_at, bkav_invoice_no, bkav_status, bkav_issued_at,
              is_locked, locked_bkav_no, locked_bkav_date, locked_at, locked_by)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,NOW(),?, ?,NOW(),1,?,?,NOW(),?)
+        VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, NOW(), ?, ?, NOW(),
+            1, ?, ?, NOW(), ?
+        )
     ")->execute([
         $invoiceNo,
         $invoiceDate,
