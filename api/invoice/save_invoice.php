@@ -102,7 +102,6 @@ try {
         $subtotal, $vatRate, $vatAmount, $totalAmount,
         null, $note, $user['id'], $invoiceMeta
     ]);
-    $releaseStmt->execute([$lockName]);
     $invoiceId = $pdo->lastInsertId();
 
     // Insert items
@@ -129,6 +128,7 @@ try {
     }
 
     $pdo->commit();
+    $releaseStmt->execute([$lockName]);
     echo json_encode(['ok'=>true,'msg'=>'Đã tạo hoá đơn','invoice_no'=>$invoiceNo,'id'=>$invoiceId]);
 
 } catch (Throwable $e) {

@@ -49,9 +49,13 @@ try {
 
     $paymentCheck = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE invoice_id = ?");
     $paymentCheck->execute([$invoiceId]);
-    if ((int)$paymentCheck->fetchColumn() > 0) {
+    $paymentCount = (int)$paymentCheck->fetchColumn();
+    if ($paymentCount > 0 && !$isManualEntry) {
         $pdo->rollBack();
         echo json_encode(['ok' => false, 'msg' => 'Hoá đơn đã có ghi nhận thu tiền. Vui lòng xoá payment trước.']); exit;
+    }
+    if ($paymentCount > 0 && $isManualEntry) {
+        $pdo->prepare("DELETE FROM payments WHERE invoice_id = ?")->execute([$invoiceId]);
     }
 
     $pdo->prepare("

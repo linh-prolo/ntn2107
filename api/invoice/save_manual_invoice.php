@@ -132,8 +132,8 @@ try {
         ]);
     }
 
-    $releaseStmt->execute([$lockName]);
     $pdo->commit();
+    $releaseStmt->execute([$lockName]);
     echo json_encode([
         'ok' => true,
         'msg' => 'Đã thêm hoá đơn thủ công',
