@@ -251,7 +251,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                    onclick="event.stopPropagation()">
                                     <i class="fas fa-print"></i>
                                 </a>
-                                <?php if (!$bkavIssued && empty($inv['is_locked'])): ?>
+                                <?php if (!$bkavIssued && empty($inv['is_locked']) && (float)$inv['paid_amount'] <= 0): ?>
                                 <button class="btn btn-sm btn-outline-danger btn-delete-invoice"
                                         data-id="<?= $inv['id'] ?>"
                                         data-no="<?= htmlspecialchars($inv['invoice_no']) ?>"
@@ -721,6 +721,7 @@ document.getElementById('modalInvoice').addEventListener('show.bs.modal', () => 
 
 document.getElementById('modalManualInvoice').addEventListener('show.bs.modal', () => {
     document.getElementById('formManualInvoice').reset();
+    document.getElementById('manualCustomerSelect').value = '';
     document.getElementById('manualInvoiceDate').value = '<?= date('Y-m-d') ?>';
     document.getElementById('manualVatRate').value = '8';
     document.getElementById('manualPaymentStatus').value = 'unpaid';

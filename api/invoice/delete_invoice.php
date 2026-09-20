@@ -106,7 +106,7 @@ try {
         $reopenDeliveryIds = array_values(array_filter($deliveryIds, static fn($id) => empty($stillLinked[$id])));
         if (!empty($reopenDeliveryIds)) {
             $ph = implode(',', array_fill(0, count($reopenDeliveryIds), '?'));
-            $pdo->prepare("UPDATE oqc_deliveries SET status='draft' WHERE id IN ($ph)")->execute($reopenDeliveryIds);
+            $pdo->prepare("UPDATE oqc_deliveries SET status='draft' WHERE status='delivered' AND id IN ($ph)")->execute($reopenDeliveryIds);
         }
     }
 
