@@ -432,11 +432,12 @@ $sql = "
       AND (
            (r.name = 'employee'   AND ? >= 2)
         OR (r.name = 'production' AND ? >= 3)
+        OR (r.name = 'warehouse'  AND ? >= 3)
         OR (r.name = 'manager'    AND ? >= 4)
         OR (r.name = 'accountant' AND ? >= 5)
       )
 ";
-$params = [$filterMonth, $filterYear, $user['id'], $myLevel, $myLevel, $myLevel, $myLevel];
+$params = [$filterMonth, $filterYear, $user['id'], $myLevel, $myLevel, $myLevel, $myLevel, $myLevel];
 if ($filterStatus !== 'all') { $sql .= " AND ot.status = ?";       $params[] = $filterStatus; }
 if ($filterDept)             { $sql .= " AND u.department_id = ?"; $params[] = $filterDept; }
 if ($filterUser)             { $sql .= " AND ot.user_id = ?";      $params[] = $filterUser; }
