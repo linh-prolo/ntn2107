@@ -134,7 +134,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <option value="0">-- Tất cả khách hàng --</option>
                         <?php foreach ($customers as $c): ?>
                         <option value="<?= (int)$c['id'] ?>" <?= $filterCustomer === (int)$c['id'] ? 'selected' : '' ?>>
-                            [<?= htmlspecialchars($c['customer_code']) ?>] <?= htmlspecialchars($c['customer_name']) ?>
+                            [<?= htmlspecialchars($c['customer_code'] ?? '') ?>] <?= htmlspecialchars($c['customer_name'] ?? '') ?>
                         </option>
                         <?php endforeach; ?>
                     </select>
@@ -229,7 +229,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <tr class="<?= debtRowClass($daysOverdue) ?>"
                                     style="cursor:pointer"
                                     onclick="window.location='invoice_detail.php?id=<?= (int)$r['id'] ?>'">
-                                    <td class="fw-semibold text-primary"><?= htmlspecialchars($r['invoice_no']) ?></td>
+                                    <td class="fw-semibold text-primary"><?= htmlspecialchars($r['invoice_no'] ?? '') ?></td>
                                     <td><?= $r['invoice_date'] ? date('d/m/Y', strtotime($r['invoice_date'])) : '—' ?></td>
                                     <td><?= $r['due_date'] ? date('d/m/Y', strtotime($r['due_date'])) : '—' ?></td>
                                     <td>
@@ -259,7 +259,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                         <?php if ($remaining > 0.01): ?>
                                         <button class="btn btn-sm btn-outline-success btn-pay"
                                                 data-id="<?= (int)$r['id'] ?>"
-                                                data-no="<?= htmlspecialchars($r['invoice_no']) ?>"
+                                                data-no="<?= htmlspecialchars($r['invoice_no'] ?? '') ?>"
                                                 data-debt="<?= (float)$remaining ?>"
                                                 title="Ghi thu"
                                                 onclick="event.stopPropagation()">
@@ -299,7 +299,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 ?>
                                 <tr>
                                     <td>
-                                        <div class="small fw-semibold"><?= htmlspecialchars($customerLabel) ?></div>
+                                        <div class="small fw-semibold"><?= htmlspecialchars($customerLabel ?? '') ?></div>
                                         <div class="progress mt-1" style="height:4px">
                                             <div class="progress-bar <?= $barClass ?>" style="width:<?= min(100, round($percent, 2)) ?>%"></div>
                                         </div>
