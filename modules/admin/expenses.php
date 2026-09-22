@@ -1088,9 +1088,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         </thead>
                         <tbody>
                         <?php if (!$hasExpenseDeletionLogTable()): ?>
-                            <tr><td colspan="10" class="text-center text-warning py-4">Chưa có bảng lịch sử xoá chi phí. Vui lòng chạy migration `api/master/migrate_expense_deletion_logs.php`.</td></tr>
+                            <tr><td colspan="11" class="text-center text-warning py-4">Chưa có bảng lịch sử xoá chi phí. Vui lòng chạy migration `api/master/migrate_expense_deletion_logs.php`.</td></tr>
                         <?php elseif (!$deletedLogs): ?>
-                            <tr><td colspan="10" class="text-center text-muted py-4">Không có đề xuất đã xoá trong tháng này.</td></tr>
+                            <tr><td colspan="11" class="text-center text-muted py-4">Không có đề xuất đã xoá trong tháng này.</td></tr>
                         <?php else: ?>
                             <?php foreach ($deletedLogs as $log): ?>
                                 <tr class="expense-row"
