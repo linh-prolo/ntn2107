@@ -125,7 +125,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         $stockTextClass = 'text-danger';
                     }
                 ?>
-                    <tr class="stock-row <?= $rowClass ?>" data-item-id="<?= (int)$s['id'] ?>" data-stock="<?= e((string)$stock) ?>">
+                    <tr class="stock-row <?= $rowClass ?>" data-item-id="<?= (int)$s['id'] ?>">
                         <td class="fw-semibold"><?= e($s['item_code']) ?></td>
                         <td><?= e($s['item_name']) ?></td>
                         <td><?= e($s['category_name'] ?? '') ?></td>
@@ -134,7 +134,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <td class="text-end"><?= e(number_format($minStock, 2, ',', '.')) ?></td>
                         <td><span class="badge bg-<?= $statusBadge ?>"><?= $statusText ?></span></td>
                         <td class="text-end">
-                            <button type="button" class="btn btn-sm btn-outline-primary btn-item-history" data-item-id="<?= (int)$s['id'] ?>" data-stock="<?= e((string)$stock) ?>" aria-label="Xem lịch sử vật tư mã #<?= (int)$s['id'] ?>">
+                            <button type="button" class="btn btn-sm btn-outline-primary btn-item-history" data-item-id="<?= (int)$s['id'] ?>" aria-label="Xem lịch sử vật tư mã #<?= (int)$s['id'] ?>">
                                 <i class="fas fa-history me-1"></i>Lịch sử
                             </button>
                         </td>
@@ -225,12 +225,7 @@ window.addEventListener('load', function() {
         historyLimitNote.textContent = '';
 
         try {
-            const stockHint = Number(historyCurrentStock.dataset.stockHint || '');
-            const query = new URLSearchParams({ item_id: String(itemId) });
-            if (Number.isFinite(stockHint)) {
-                query.set('stock_hint', String(stockHint));
-            }
-            const res = await fetch('/erp/api/warehouse_admin/get_item_history.php?' + query.toString());
+            const res = await fetch('/erp/api/warehouse_admin/get_item_history.php?item_id=' + encodeURIComponent(itemId));
             const contentType = res.headers.get('content-type') || '';
             const data = contentType.includes('application/json') ? await res.json() : null;
             if (!res.ok) {
@@ -278,8 +273,7 @@ window.addEventListener('load', function() {
         }
     }
 
-    function openHistory(itemId, stockHint) {
-        historyCurrentStock.dataset.stockHint = String(stockHint ?? '');
+    function openHistory(itemId) {
         modal.show();
         loadHistory(itemId);
     }
@@ -288,14 +282,14 @@ window.addEventListener('load', function() {
         btn.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
-            openHistory(this.dataset.itemId || '0', this.dataset.stock || '');
+            openHistory(this.dataset.itemId || '0');
         });
     });
 
     document.querySelectorAll('.stock-row').forEach(function(row) {
         row.addEventListener('click', function(e) {
             if (e.target.closest('.btn-item-history')) return;
-            openHistory(this.dataset.itemId || '0', this.dataset.stock || '');
+            openHistory(this.dataset.itemId || '0');
         });
     });
 });

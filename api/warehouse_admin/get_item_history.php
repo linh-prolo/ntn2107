@@ -7,7 +7,6 @@ requireLoginApi();
 requireRoleApi('director', 'accountant', 'manager', 'warehouse');
 
 $itemId = (int)($_GET['item_id'] ?? 0);
-$stockHintRaw = $_GET['stock_hint'] ?? null;
 if ($itemId <= 0) {
     http_response_code(400);
     echo json_encode(['ok' => false, 'msg' => 'Thiếu vật tư'], JSON_UNESCAPED_UNICODE);
@@ -29,14 +28,12 @@ if (!$item) {
     exit;
 }
 
-$stock = is_numeric($stockHintRaw)
-    ? (float)$stockHintRaw
-    : (float)fetchScalarSafe(
-        $pdo,
-        "SELECT COALESCE(SUM(CASE WHEN type='import' THEN qty WHEN type='export' THEN -qty ELSE 0 END), 0) FROM wa_transactions WHERE item_id = ?",
-        [$itemId],
-        0
-    );
+$stock = (float)fetchScalarSafe(
+    $pdo,
+    "SELECT COALESCE(SUM(CASE WHEN type='import' THEN qty WHEN type='export' THEN -qty ELSE 0 END), 0) FROM wa_transactions WHERE item_id = ?",
+    [$itemId],
+    0
+);
 $item['stock'] = $stock;
 
 $history = fetchAllSafe($pdo, "
