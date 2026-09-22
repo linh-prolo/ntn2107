@@ -55,6 +55,7 @@ $totalOT       = array_sum(array_column($slips, 'total_ot_amount'));
 $totalKpiBonus = array_sum(array_column($slips, 'kpi_bonus'));
 $totalKpiDeduct= array_sum(array_column($slips, 'kpi_deduction'));
 $totalHousing  = array_sum(array_column($slips, 'housing_received')); // ✅ Nhà ở
+$totalOtMeal   = array_sum(array_column($slips, 'ot_meal_bonus'));
 $totalResponsibility = array_sum(array_map(fn($s) => (float)($s['responsibility_allowance_received'] ?? 0), $slips));
 $totalSeniority      = array_sum(array_map(fn($s) => (float)($s['seniority_allowance_received'] ?? 0), $slips));
 $totalNightWD  = array_sum(array_column($slips, 'ot_night_weekday_amount'));
@@ -227,7 +228,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <th class="sticky-col col-days"  rowspan="2">Ngày công</th>
                     <th class="sticky-col col-basic" rowspan="2">Lương CB</th>
                     <th colspan="6" class="grp-ot">OT</th>
-                    <th colspan="4" class="grp-allowance">Trợ cấp</th>
+                    <th colspan="5" class="grp-allowance">Trợ cấp</th>
                     <th colspan="6" class="grp-bonus">Phụ cấp & Thưởng</th><!-- ✅ colspan 4→6 -->
                     <th colspan="2" class="grp-kpi">KPI</th>
                     <th colspan="2" class="grp-leave">Nghỉ phép</th>
@@ -247,6 +248,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <th class="grp-allowance">Điện thoại</th>
                     <th class="grp-allowance">Đi lại</th>
                     <th class="grp-allowance">Nhà ở</th><!-- ✅ thêm cột Nhà ở -->
+                    <th class="grp-allowance">Ăn ca OT</th>
                     <th class="grp-bonus" title="Phụ cấp trách nhiệm thực nhận">PC Trách nhiệm</th>
                     <th class="grp-bonus" title="Phụ cấp thâm niên thực nhận">PC Thâm niên</th>
                     <th class="grp-bonus">Hiệu quả</th>
@@ -311,7 +313,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <td class="text-end"><?= $nightHL > 0 ? number_format($nightHL) : '<span class="c-muted">—</span>' ?></td>
 
                 <!-- Trợ cấp — ✅ thêm housing_received -->
-                <?php foreach (['clothes_received','phone_received','transport_received','housing_received'] as $f):
+                <?php foreach (['clothes_received','phone_received','transport_received','housing_received','ot_meal_bonus'] as $f):
                     $val = (float)($s[$f] ?? 0); ?>
                 <td class="text-end"><?= $val > 0 ? number_format($val) : '<span class="c-muted">—</span>' ?></td>
                 <?php endforeach; ?>
@@ -400,6 +402,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'phone_received'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'transport_received'))) ?></td>
                     <td class="text-end"><?= number_format($totalHousing) ?></td><!-- ✅ Tổng nhà ở -->
+                    <td class="text-end"><?= number_format($totalOtMeal) ?></td>
                     <td class="text-end"><?= number_format($totalResponsibility) ?></td>
                     <td class="text-end"><?= number_format($totalSeniority) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'performance_bonus'))) ?></td>

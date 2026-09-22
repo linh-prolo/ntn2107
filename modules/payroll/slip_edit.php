@@ -150,6 +150,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 'phone_received'                    => 'Điện thoại',
                                 'transport_received'                => 'Đi lại',
                                 'housing_received'                  => 'Nhà ở',
+                                'ot_meal_bonus'                     => 'Ăn ca OT',
                                 'responsibility_allowance_received' => 'PC Trách nhiệm',
                                 'seniority_allowance_received'      => 'PC Thâm niên',
                                 'attendance_bonus'                  => 'Chuyên cần',
@@ -399,7 +400,8 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                         (float)$slip['clothes_received'] +
                                         (float)$slip['phone_received'] +
                                         (float)$slip['transport_received'] +
-                                        (float)($slip['housing_received'] ?? 0)  // ✅ cộng nhà ở
+                                        (float)($slip['housing_received'] ?? 0) +
+                                        (float)($slip['ot_meal_bonus'] ?? 0)
                                     ) ?> đ
                                 </td>
                             </tr>
@@ -556,6 +558,7 @@ const BASE = {
     phone            : <?= (float)$slip['phone_received'] ?>,
     transport        : <?= (float)$slip['transport_received'] ?>,
     housing          : <?= (float)($slip['housing_received'] ?? 0) ?>,
+    ot_meal          : <?= (float)($slip['ot_meal_bonus'] ?? 0) ?>,
     responsibility   : <?= (float)($slip['responsibility_allowance_received'] ?? 0) ?>,
     seniority        : <?= (float)($slip['seniority_allowance_received'] ?? 0) ?>,
     other_income     : <?= (float)$slip['other_income'] ?>,
@@ -582,7 +585,7 @@ function recalc() {
     const pitAdj      = parseFloat(document.querySelector('[name="pit_adjustment"]').value)    || 0;
 
     const gross = BASE.basic_received
-                + BASE.meal + BASE.clothes + BASE.phone + BASE.transport + BASE.housing
+                + BASE.meal + BASE.clothes + BASE.phone + BASE.transport + BASE.housing + BASE.ot_meal
                 + BASE.responsibility + BASE.seniority
                 + BASE.attendance_bonus + BASE.ot + BASE.kpi_bonus
                 + BASE.annual_leave
