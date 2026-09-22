@@ -230,6 +230,8 @@ elseif (isGroupActive(['/modules/users/index'])) $activeGroup = 'system';
           <i class="fas fa-tags"></i><span>Nhóm vật tư</span></a></li>
         <li><a class="nav-link <?= isActive('/warehouse_admin/items') ?>" href="/erp/modules/warehouse_admin/items.php">
           <i class="fas fa-list-alt"></i><span>Danh mục vật tư</span></a></li>
+        <li><a class="nav-link <?= isActive('/warehouse_admin/stock') ?>" href="/erp/modules/warehouse_admin/stock.php">
+          <i class="fas fa-boxes"></i><span>Tồn kho</span></a></li>
         <li><a class="nav-link <?= isActive('/warehouse_admin/transactions') ?>" href="/erp/modules/warehouse_admin/transactions.php">
           <i class="fas fa-exchange-alt"></i><span>Nhập / Xuất kho</span></a></li>
       </ul>
