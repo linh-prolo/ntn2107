@@ -1853,6 +1853,7 @@ CREATE TABLE `invoices` (
   `note` text DEFAULT NULL,
   `delivery_id` int(11) DEFAULT NULL,
   `status` enum('draft','unpaid','partial','paid','cancelled') DEFAULT 'unpaid',
+  `is_manual` tinyint(1) NOT NULL DEFAULT 0,
   `created_by` int(11) DEFAULT NULL,
   `confirmed_by` int(11) DEFAULT NULL,
   `confirmed_at` timestamp NULL DEFAULT NULL,
