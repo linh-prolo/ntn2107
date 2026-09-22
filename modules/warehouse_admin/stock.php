@@ -125,7 +125,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         $stockTextClass = 'text-danger';
                     }
                 ?>
-                    <tr class="stock-row <?= $rowClass ?>" data-item-id="<?= (int)$s['id'] ?>" tabindex="0" role="button" aria-label="Mở lịch sử vật tư <?= e($s['item_code'] . ' - ' . $s['item_name']) ?>">
+                    <tr class="<?= $rowClass ?>">
                         <td class="fw-semibold"><?= e($s['item_code']) ?></td>
                         <td><?= e($s['item_name']) ?></td>
                         <td><?= e($s['category_name'] ?? '') ?></td>
@@ -181,9 +181,6 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
     </div>
 </div>
 
-<style>
-.stock-row { cursor: pointer; }
-</style>
 <script>
 window.addEventListener('load', function() {
     const modalEl = document.getElementById('modalItemHistory');
@@ -242,11 +239,12 @@ window.addEventListener('load', function() {
 
             historyItemTitle.textContent = (data.item.item_code || '') + ' - ' + (data.item.item_name || '');
             historyCurrentStock.textContent = formatQty(data.item.stock) + ' ' + (data.item.unit || '');
-            if (Number(data.history_limit || 0) > 0) {
+            const limit = Number(data.history_limit || 0);
+            const history = Array.isArray(data.history) ? data.history : [];
+            if (limit > 0 && history.length >= limit) {
                 historyLimitNote.textContent = 'Hiển thị tối đa ' + Number(data.history_limit).toLocaleString('vi-VN') + ' giao dịch gần nhất.';
             }
 
-            const history = Array.isArray(data.history) ? data.history : [];
             if (history.length === 0) {
                 historyTableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Chưa có giao dịch</td></tr>';
             } else {
@@ -288,19 +286,6 @@ window.addEventListener('load', function() {
         });
     });
 
-    document.querySelectorAll('.stock-row').forEach(function(row) {
-        row.addEventListener('click', function(e) {
-            if (e.target.closest('.btn-item-history')) return;
-            openHistory(this.dataset.itemId || '0');
-        });
-        row.addEventListener('keydown', function(e) {
-            if (e.target.closest('.btn-item-history')) return;
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                openHistory(this.dataset.itemId || '0');
-            }
-        });
-    });
 });
 </script>
 <?php include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/footer.php'; ?>
