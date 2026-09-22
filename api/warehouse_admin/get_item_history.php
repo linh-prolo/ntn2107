@@ -14,6 +14,7 @@ if ($itemId <= 0) {
 }
 
 $pdo = getDBConnection();
+// Đồng bộ với UI modal: tải tối đa 50 giao dịch gần nhất mỗi lần mở lịch sử.
 $historyLimit = 50;
 $historyLimitSql = (int)$historyLimit;
 

@@ -35,7 +35,7 @@ $stocks = fetchAllSafe($pdo, "
         WHERE " . implode(' AND ', $where) . "
         GROUP BY i.id, i.item_code, i.item_name, i.unit, COALESCE(i.min_stock, 0), c.name
     ) s
-    " . ($lowStockOnly ? 'WHERE s.stock < 0 OR s.stock <= COALESCE(s.min_stock, 0)' : '') . "
+    " . ($lowStockOnly ? 'WHERE (s.stock < 0) OR (s.stock >= 0 AND s.stock <= COALESCE(s.min_stock, 0))' : '') . "
     ORDER BY
         CASE
             WHEN s.stock <= 0 THEN 0
@@ -233,6 +233,9 @@ window.addEventListener('load', function() {
             const res = await fetch('/erp/api/warehouse_admin/get_item_history.php?item_id=' + encodeURIComponent(itemId), {
                 headers: { 'Accept': 'application/json' }
             });
+            if (res.redirected) {
+                throw new Error('Phiên đăng nhập đã hết hạn hoặc bạn không có quyền truy cập. Vui lòng đăng nhập lại.');
+            }
             const rawBody = await res.text();
             let data = null;
             try {
