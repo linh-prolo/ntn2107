@@ -514,6 +514,15 @@ table.data .kpi-deduct-row td { background: #f8d7da; }
             <td class="amt pos"><?= number_format((float)($s['seniority_allowance_received'] ?? 0)) ?> đ</td>
         </tr>
         <?php endif; ?>
+        <?php if ($otMealBonus > 0): ?>
+        <tr>
+            <td class="lbl sub">
+                (13e) 🍱 Trợ cấp ăn ca OT / OT meal allowance
+                <span class="badge badge-info"><?= $otMealDays ?> ngày OT ≥3h</span>
+            </td>
+            <td class="amt pos"><?= number_format($otMealBonus) ?> đ</td>
+        </tr>
+        <?php endif; ?>
         <tr>
             <td class="lbl sub">(14) Thưởng hiệu quả / Performance bonus</td>
             <td class="amt pos"><?= number_format($s['performance_bonus']) ?> đ</td>
@@ -582,15 +591,6 @@ table.data .kpi-deduct-row td { background: #f8d7da; }
                 <span style="color:#888;font-size:11px;">[<?= number_format($s['ot_night_holiday_hours'],2) ?>h]</span>
             </td>
             <td class="amt pos"><?= number_format($s['ot_night_holiday_amount']) ?> đ</td>
-        </tr>
-        <?php endif; ?>
-        <?php if ($otMealBonus > 0): ?>
-        <tr>
-            <td class="lbl sub">
-                (18e) 🍱 Trợ cấp ăn ca OT / OT meal allowance
-                <span class="badge badge-info"><?= $otMealDays ?> ngày OT ≥3h</span>
-            </td>
-            <td class="amt pos"><?= number_format($otMealBonus) ?> đ</td>
         </tr>
         <?php endif; ?>
         <tr class="bold-row">
