@@ -124,7 +124,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         $statusBadge = 'danger';
                         $statusText = 'Hết hàng';
                         $stockTextClass = 'text-danger';
-                    } elseif ($stock <= $minStock) {
+                    } elseif ($stock > 0 && $minStock > 0 && $stock <= $minStock) {
                         $rowClass = 'table-warning';
                         $statusBadge = 'warning text-dark';
                         $statusText = 'Sắp hết';
@@ -268,11 +268,10 @@ window.addEventListener('load', function() {
             const itemTitleParts = [data.item.item_code, data.item.item_name].filter(function(v) { return !!v; });
             historyItemTitle.textContent = itemTitleParts.length ? itemTitleParts.join(' - ') : 'Vật tư';
             historyCurrentStock.textContent = formatQty(data.item.stock) + ' ' + (data.item.unit || '');
-            const limit = Number(data.history_limit || 0);
             const history = Array.isArray(data.history) ? data.history : [];
             historyLoading.classList.add('d-none');
             historyTableWrap.classList.remove('d-none');
-            if (limit > 0 && history.length >= limit) {
+            if (data.has_more && Number(data.history_limit || 0) > 0) {
                 historyLimitNote.textContent = 'Hiển thị tối đa ' + Number(data.history_limit).toLocaleString('vi-VN') + ' giao dịch gần nhất.';
             }
 

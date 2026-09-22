@@ -17,6 +17,7 @@ $pdo = getDBConnection();
 // Đồng bộ với UI modal: tải tối đa 50 giao dịch gần nhất mỗi lần mở lịch sử.
 $historyLimit = 50;
 $historyLimitSql = (int)$historyLimit;
+$historyFetchLimitSql = (int)($historyLimit + 1);
 
 $item = fetchOneSafe($pdo, "
     SELECT i.id, i.item_code, i.item_name, i.unit, i.min_stock
@@ -44,12 +45,17 @@ $history = fetchAllSafe($pdo, "
     LEFT JOIN users u ON u.id = t.transacted_by
     WHERE t.item_id = ?
     ORDER BY t.transacted_at DESC, t.id DESC
-    LIMIT " . $historyLimitSql . "
+    LIMIT " . $historyFetchLimitSql . "
 ", [$itemId]);
+$hasMore = count($history) > $historyLimitSql;
+if ($hasMore) {
+    $history = array_slice($history, 0, $historyLimitSql);
+}
 
 echo json_encode([
     'ok' => true,
     'item' => $item,
     'history' => $history,
     'history_limit' => $historyLimit,
+    'has_more' => $hasMore,
 ], JSON_UNESCAPED_UNICODE);
