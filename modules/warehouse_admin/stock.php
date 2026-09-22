@@ -114,7 +114,12 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     $statusBadge = 'success';
                     $statusText = 'Bình thường';
                     $stockTextClass = 'text-success';
-                    if ($stock <= 0) {
+                    if ($stock < 0) {
+                        $rowClass = 'table-danger';
+                        $statusBadge = 'dark';
+                        $statusText = 'Âm kho';
+                        $stockTextClass = 'text-danger';
+                    } elseif ($stock == 0.0) {
                         $rowClass = 'table-danger';
                         $statusBadge = 'danger';
                         $statusText = 'Hết hàng';
@@ -228,17 +233,25 @@ window.addEventListener('load', function() {
             const res = await fetch('/erp/api/warehouse_admin/get_item_history.php?item_id=' + encodeURIComponent(itemId), {
                 headers: { 'Accept': 'application/json' }
             });
-            const contentType = res.headers.get('content-type') || '';
-            if (!contentType.includes('application/json')) {
+            const rawBody = await res.text();
+            let data = null;
+            try {
+                data = rawBody ? JSON.parse(rawBody) : null;
+            } catch (parseError) {
+                data = null;
+            }
+            if (requestId !== latestRequestId) return;
+            if (!res.ok) {
+                if (data && data.msg) {
+                    throw new Error(data.msg);
+                }
                 if (res.status === 401 || res.status === 403 || res.redirected) {
                     throw new Error('Phiên đăng nhập đã hết hạn hoặc bạn không có quyền truy cập. Vui lòng đăng nhập lại.');
                 }
-                throw new Error('Phản hồi từ máy chủ không hợp lệ. Vui lòng thử lại.');
+                throw new Error('Lỗi server (HTTP ' + res.status + ')');
             }
-            const data = await res.json();
-            if (requestId !== latestRequestId) return;
-            if (!res.ok) {
-                throw new Error(data.msg || ('Lỗi server (HTTP ' + res.status + ')'));
+            if (!data) {
+                throw new Error('Phản hồi từ máy chủ không hợp lệ. Vui lòng thử lại.');
             }
             if (!data.ok) {
                 throw new Error(data.msg || 'Không thể tải lịch sử vật tư');
