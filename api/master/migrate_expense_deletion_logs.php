@@ -19,6 +19,17 @@ if (php_sapi_name() !== 'cli') {
 $pdo = getDBConnection();
 
 try {
+    $tableExists = (bool)$pdo->query("SHOW TABLES LIKE 'expense_deletion_logs'")->fetchColumn();
+    if ($tableExists) {
+        echo "Table 'expense_deletion_logs' already exists. Nothing to do.\n";
+        exit;
+    }
+} catch (Throwable $e) {
+    echo "Migration pre-check failed: " . $e->getMessage() . "\n";
+    exit(1);
+}
+
+try {
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS expense_deletion_logs (
             id INT AUTO_INCREMENT PRIMARY KEY,
