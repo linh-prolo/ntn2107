@@ -584,6 +584,15 @@ table.data .kpi-deduct-row td { background: #f8d7da; }
             <td class="amt pos"><?= number_format($s['ot_night_holiday_amount']) ?> đ</td>
         </tr>
         <?php endif; ?>
+        <?php if ($otMealBonus > 0): ?>
+        <tr>
+            <td class="lbl sub">
+                (18e) 🍱 Trợ cấp ăn ca OT / OT meal allowance
+                <span class="badge badge-info"><?= $otMealDays ?> ngày OT ≥3h</span>
+            </td>
+            <td class="amt pos"><?= number_format($otMealBonus) ?> đ</td>
+        </tr>
+        <?php endif; ?>
         <tr class="bold-row">
             <td class="lbl">(19) Tổng tiền làm thêm / Total OT</td>
             <td class="amt pos"><?= number_format($s['total_ot_amount']) ?> đ</td>
