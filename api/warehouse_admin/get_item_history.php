@@ -14,7 +14,7 @@ if ($itemId <= 0) {
 }
 
 $pdo = getDBConnection();
-$historyLimit = 100;
+$historyLimit = 50;
 
 $item = fetchOneSafe($pdo, "
     SELECT i.id, i.item_code, i.item_name, i.unit, i.min_stock

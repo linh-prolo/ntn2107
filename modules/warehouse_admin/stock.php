@@ -125,7 +125,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         $stockTextClass = 'text-danger';
                     }
                 ?>
-                    <tr class="stock-row <?= $rowClass ?>" data-item-id="<?= (int)$s['id'] ?>" tabindex="0" role="button" aria-label="Mở lịch sử vật tư <?= e($s['item_code']) ?>">
+                    <tr class="stock-row <?= $rowClass ?>" data-item-id="<?= (int)$s['id'] ?>" tabindex="0" role="button" aria-label="Mở lịch sử vật tư <?= e($s['item_code'] . ' - ' . $s['item_name']) ?>">
                         <td class="fw-semibold"><?= e($s['item_code']) ?></td>
                         <td><?= e($s['item_name']) ?></td>
                         <td><?= e($s['category_name'] ?? '') ?></td>
@@ -134,7 +134,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <td class="text-end"><?= e(number_format($minStock, 2, ',', '.')) ?></td>
                         <td><span class="badge bg-<?= $statusBadge ?>"><?= $statusText ?></span></td>
                         <td class="text-end">
-                            <button type="button" class="btn btn-sm btn-outline-primary btn-item-history" data-item-id="<?= (int)$s['id'] ?>" aria-label="Xem lịch sử vật tư mã #<?= (int)$s['id'] ?>">
+                            <button type="button" class="btn btn-sm btn-outline-primary btn-item-history" data-item-id="<?= (int)$s['id'] ?>" aria-label="Xem lịch sử vật tư <?= e($s['item_code'] . ' - ' . $s['item_name']) ?>">
                                 <i class="fas fa-history me-1"></i>Lịch sử
                             </button>
                         </td>
@@ -225,7 +225,9 @@ window.addEventListener('load', function() {
         historyLimitNote.textContent = '';
 
         try {
-            const res = await fetch('/erp/api/warehouse_admin/get_item_history.php?item_id=' + encodeURIComponent(itemId));
+            const res = await fetch('/erp/api/warehouse_admin/get_item_history.php?item_id=' + encodeURIComponent(itemId), {
+                headers: { 'Accept': 'application/json' }
+            });
             const contentType = res.headers.get('content-type') || '';
             const data = contentType.includes('application/json') ? await res.json() : null;
             if (!res.ok) {
