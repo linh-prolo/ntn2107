@@ -27,19 +27,19 @@ if ($keyword !== '') {
 $stocks = fetchAllSafe($pdo, "
     SELECT s.*
     FROM (
-        SELECT i.id, i.item_code, i.item_name, i.unit, i.min_stock, c.name AS category_name,
+        SELECT i.id, i.item_code, i.item_name, i.unit, COALESCE(i.min_stock, 0) AS min_stock, c.name AS category_name,
                COALESCE(SUM(CASE WHEN t.type='import' THEN t.qty WHEN t.type='export' THEN -t.qty ELSE 0 END), 0) AS stock
         FROM wa_items i
         LEFT JOIN wa_categories c ON c.id = i.category_id
         LEFT JOIN wa_transactions t ON t.item_id = i.id
         WHERE " . implode(' AND ', $where) . "
-        GROUP BY i.id, i.item_code, i.item_name, i.unit, i.min_stock, c.name
+        GROUP BY i.id, i.item_code, i.item_name, i.unit, COALESCE(i.min_stock, 0), c.name
     ) s
-    " . ($lowStockOnly ? 'WHERE s.stock <= COALESCE(s.min_stock, 0)' : '') . "
+    " . ($lowStockOnly ? 'WHERE s.stock <= s.min_stock' : '') . "
     ORDER BY
         CASE
             WHEN s.stock <= 0 THEN 0
-            WHEN s.stock <= COALESCE(s.min_stock, 0) THEN 1
+            WHEN s.stock <= s.min_stock THEN 1
             ELSE 2
         END ASC,
         s.stock ASC,
@@ -257,8 +257,8 @@ window.addEventListener('load', function() {
             historyLoading.classList.add('d-none');
             historyError.textContent = err.message || 'Không thể tải lịch sử giao dịch';
             historyError.classList.remove('d-none');
-            historyTableWrap.classList.remove('d-none');
-            historyTableBody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">Không thể tải lịch sử giao dịch</td></tr>';
+            historyTableWrap.classList.add('d-none');
+            historyTableBody.innerHTML = '';
         }
     }
 
