@@ -9,6 +9,8 @@ $pdo = getDBConnection();
 $user = currentUser();
 $assetsModuleUrl = '/erp/modules/admin/assets.php';
 $canApprove = hasRole('director');
+$canDeleteApproved = hasRole('director');
+$canViewDeleted = $canDeleteApproved;
 $canManageCategories = hasRole('director', 'accountant');
 $canViewHistory = hasRole('director', 'accountant', 'manager');
 $canRecordPayment = hasRole('director', 'accountant', 'manager');
@@ -30,9 +32,12 @@ $filterMonth = preg_match('/^\d{4}-\d{2}$/', $_GET['month'] ?? '') ? $_GET['mont
 $filterCategory = (int)($_GET['category_id'] ?? 0);
 $filterStatus = trim($_GET['status'] ?? '');
 $filterPayment = trim($_GET['payment_status'] ?? '');
-$allowedTabs = ['mine', 'pending', 'history', 'categories'];
+$allowedTabs = ['mine', 'pending', 'history', 'deleted', 'categories'];
 $activeTab = in_array($_GET['tab'] ?? 'mine', $allowedTabs, true) ? (string)($_GET['tab'] ?? 'mine') : 'mine';
 if ($activeTab === 'pending' && !$canApprove) {
+    $activeTab = 'mine';
+}
+if ($activeTab === 'deleted' && !$canViewDeleted) {
     $activeTab = 'mine';
 }
 if ($activeTab === 'categories' && !$canManageCategories) {
@@ -91,6 +96,51 @@ $findExpense = static function (int $expenseId) use ($pdo): ?array {
          LIMIT 1",
         [$expenseId]
     );
+};
+
+$ensureExpenseDeletionLogTable = static function () use ($pdo): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS expense_deletion_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            original_expense_id INT NOT NULL,
+            request_no VARCHAR(50) NOT NULL,
+            category_id INT NULL,
+            category_name VARCHAR(100) NULL,
+            amount DECIMAL(15,2) NOT NULL,
+            expense_date DATE NOT NULL,
+            purpose TEXT NULL,
+            has_invoice TINYINT(1) DEFAULT 0,
+            invoice_no VARCHAR(100) NULL,
+            invoice_date DATE NULL,
+            invoice_company VARCHAR(255) NULL,
+            payment_method VARCHAR(20) NULL,
+            note TEXT NULL,
+            status_before_delete VARCHAR(20) NOT NULL,
+            requested_by INT NULL,
+            requested_name VARCHAR(150) NULL,
+            approved_by INT NULL,
+            approved_name VARCHAR(150) NULL,
+            approved_at DATETIME NULL,
+            paid_amount DECIMAL(15,2) DEFAULT 0,
+            payments_snapshot TEXT NULL COMMENT 'JSON snapshot của các khoản đã thanh toán',
+            deleted_by INT NOT NULL,
+            deleted_name VARCHAR(150) NULL,
+            delete_reason TEXT NOT NULL,
+            deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_edl_original_expense (original_expense_id),
+            KEY idx_edl_expense_date (expense_date),
+            KEY idx_edl_deleted_at (deleted_at),
+            KEY idx_edl_deleted_by (deleted_by),
+            CONSTRAINT fk_edl_deleted_by FOREIGN KEY (deleted_by) REFERENCES users(id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    $ensured = true;
 };
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -328,9 +378,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'delete') {
         $expenseId = (int)($_POST['id'] ?? 0);
+        $deleteReason = trim($_POST['delete_reason'] ?? '');
         $expense = $findExpense($expenseId);
         if (!$expense) {
             setFlash('danger', 'Không tìm thấy đề xuất.');
+        } elseif ($expense['status'] === 'approved') {
+            if (!$canDeleteApproved) {
+                setFlash('danger', 'Bạn không có quyền xoá đề xuất đã duyệt.');
+            } elseif ($deleteReason === '') {
+                setFlash('danger', 'Vui lòng nhập lý do xoá đề xuất đã duyệt.');
+            } else {
+                try {
+                    $ensureExpenseDeletionLogTable();
+                    $payments = fetchAllSafe(
+                        $pdo,
+                        "SELECT ep.*, u.full_name AS paid_by_name
+                         FROM expense_payments ep
+                         LEFT JOIN users u ON u.id = ep.paid_by
+                         WHERE ep.expense_id = ?
+                         ORDER BY ep.payment_date ASC, ep.id ASC",
+                        [$expenseId]
+                    );
+                    $paymentsSnapshot = json_encode($payments, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                    $pdo->beginTransaction();
+                    $pdo->prepare(
+                        "INSERT INTO expense_deletion_logs (
+                            original_expense_id, request_no, category_id, category_name, amount, expense_date, purpose,
+                            has_invoice, invoice_no, invoice_date, invoice_company, payment_method, note,
+                            status_before_delete, requested_by, requested_name, approved_by, approved_name, approved_at,
+                            paid_amount, payments_snapshot, deleted_by, deleted_name, delete_reason
+                        ) VALUES (
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        )"
+                    )->execute([
+                        (int)$expense['id'],
+                        $expense['request_no'],
+                        $expense['category_id'] !== null ? (int)$expense['category_id'] : null,
+                        $expense['category_name'] ?? null,
+                        (float)$expense['amount'],
+                        $expense['expense_date'],
+                        $expense['purpose'] ?? null,
+                        !empty($expense['has_invoice']) ? 1 : 0,
+                        $expense['invoice_no'] ?? null,
+                        $expense['invoice_date'] ?? null,
+                        $expense['invoice_company'] ?? null,
+                        $expense['payment_method'] ?? null,
+                        $expense['note'] ?? null,
+                        $expense['status'],
+                        $expense['requested_by'] !== null ? (int)$expense['requested_by'] : null,
+                        $expense['requested_name'] ?? null,
+                        $expense['approved_by'] !== null ? (int)$expense['approved_by'] : null,
+                        $expense['approved_name'] ?? null,
+                        $expense['approved_at'] ?? null,
+                        (float)$expense['paid_amount'],
+                        $paymentsSnapshot !== false ? $paymentsSnapshot : '[]',
+                        currentUserId(),
+                        $user['full_name'] ?? null,
+                        $deleteReason,
+                    ]);
+                    $pdo->prepare('DELETE FROM expense_requests WHERE id = ?')->execute([$expenseId]);
+                    $pdo->commit();
+                    setFlash('success', 'Đã xoá đề xuất đã duyệt và lưu vào lịch sử xoá.');
+                } catch (Throwable $e) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    setFlash('danger', 'Không thể xoá đề xuất đã duyệt. Vui lòng thử lại.');
+                }
+            }
         } elseif (!in_array($expense['status'], ['draft', 'rejected'], true)) {
             setFlash('danger', 'Chỉ có thể xoá đề xuất ở trạng thái nháp hoặc bị từ chối.');
         } elseif (
@@ -628,6 +744,22 @@ $historyCount = (int)fetchScalarSafe(
     $canViewHistory ? [] : [currentUserId()],
     0
 );
+$deletedCount = 0;
+$deletedLogs = [];
+if ($canViewDeleted) {
+    $ensureExpenseDeletionLogTable();
+    $deletedCount = (int)fetchScalarSafe($pdo, 'SELECT COUNT(*) FROM expense_deletion_logs', [], 0);
+    if ($activeTab === 'deleted') {
+        $deletedLogs = fetchAllSafe(
+            $pdo,
+            "SELECT *
+             FROM expense_deletion_logs
+             WHERE expense_date BETWEEN ? AND ?
+             ORDER BY deleted_at DESC",
+            [$monthStart, $monthEnd]
+        );
+    }
+}
 
 $paymentExpenseId = (int)($_GET['payment'] ?? 0);
 $paymentExpense = $paymentExpenseId > 0 ? $findExpense($paymentExpenseId) : null;
@@ -770,6 +902,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <div class="col-md-2">
                             <input type="month" name="month" class="form-control form-control-sm" value="<?= e($filterMonth) ?>">
                         </div>
+                        <?php if ($activeTab !== 'deleted'): ?>
                         <div class="col-md-2">
                             <select name="category_id" class="form-select form-select-sm">
                                 <option value="">-- Loại chi phí --</option>
@@ -796,6 +929,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             </select>
                         </div>
                         <?php endif; ?>
+                        <?php endif; ?>
                         <div class="col-md-2">
                             <input type="text" id="searchExpense" class="form-control form-control-sm" placeholder="Tìm số phiếu, mục đích, nhà cung cấp...">
                         </div>
@@ -815,6 +949,14 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
             <?php endif; ?>
             <li class="nav-item"><a class="nav-link <?= $activeTab === 'history' ? 'active' : '' ?>" href="/erp/<?= e($expensePageUrl(['tab' => 'history', 'status' => ''])) ?>">Lịch sử <span class="badge bg-success ms-1"><?= $historyCount ?></span></a></li>
             <?php if ($canManageCategories): ?>
+                <?php if ($canViewDeleted): ?>
+                    <li class="nav-item">
+                        <a class="nav-link <?= $activeTab === 'deleted' ? 'active' : '' ?>" href="/erp/<?= e($expensePageUrl(['tab' => 'deleted', 'status' => '', 'category_id' => 0, 'payment_status' => ''])) ?>">
+                            <i class="fas fa-trash-alt me-1"></i>Đã xoá
+                            <span class="badge bg-danger ms-1"><?= $deletedCount ?></span>
+                        </a>
+                    </li>
+                <?php endif; ?>
                 <li class="nav-item">
                     <a class="nav-link <?= $activeTab === 'categories' ? 'active' : '' ?>" href="/erp/<?= e($expensePageUrl(['tab' => 'categories'])) ?>">
                         <i class="fas fa-tags me-1"></i>Loại chi phí
@@ -946,6 +1088,53 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             </div>
                         </form>
                     </div>
+                </div>
+            </div>
+        <?php elseif ($activeTab === 'deleted' && $canViewDeleted): ?>
+            <div class="card border-0 shadow-sm">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Số phiếu</th>
+                                <th>Ngày chi phí</th>
+                                <th>Mục đích</th>
+                                <th>Loại chi phí</th>
+                                <th class="text-end">Số tiền</th>
+                                <th>Người đề xuất</th>
+                                <th>Người duyệt</th>
+                                <th>Người xoá</th>
+                                <th>Thời điểm xoá</th>
+                                <th>Lý do xoá</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php if (!$deletedLogs): ?>
+                            <tr><td colspan="10" class="text-center text-muted py-4">Không có đề xuất đã xoá trong tháng này.</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($deletedLogs as $log): ?>
+                                <tr class="expense-row"
+                                    data-search="<?= e(strtolower(($log['request_no'] ?? '') . ' ' . ($log['purpose'] ?? '') . ' ' . ($log['category_name'] ?? '') . ' ' . ($log['requested_name'] ?? '') . ' ' . ($log['deleted_name'] ?? ''))) ?>">
+                                    <td class="fw-semibold text-danger"><?= e($log['request_no']) ?></td>
+                                    <td><?= e(formatDate($log['expense_date'])) ?></td>
+                                    <td><?= e($log['purpose'] ?? '—') ?></td>
+                                    <td><?= e($log['category_name'] ?? '—') ?></td>
+                                    <td class="text-end"><?= e(formatCurrency($log['amount'])) ?></td>
+                                    <td><?= e($log['requested_name'] ?? '—') ?></td>
+                                    <td>
+                                        <div><?= e($log['approved_name'] ?? '—') ?></div>
+                                        <?php if (!empty($log['approved_at'])): ?>
+                                            <div class="small text-muted"><?= e(date('d/m/Y H:i', strtotime((string)$log['approved_at']))) ?></div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= e($log['deleted_name'] ?? '—') ?></td>
+                                    <td><?= !empty($log['deleted_at']) ? e(date('d/m/Y H:i', strtotime((string)$log['deleted_at']))) : '—' ?></td>
+                                    <td><span class="text-danger fw-semibold"><?= nl2br(e((string)$log['delete_reason'])) ?></span></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         <?php else: ?>
@@ -1140,6 +1329,15 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                                     Ghi thanh toán
                                                 </button>
                                             <?php endif; ?>
+                                            <?php if ($expense['status'] === 'approved' && $canDeleteApproved): ?>
+                                                <button type="button" class="btn btn-sm btn-outline-danger btn-delete-approved"
+                                                        data-bs-toggle="modal"
+                                                        data-bs-target="#deleteApprovedModal"
+                                                        data-expense-id="<?= (int)$expense['id'] ?>"
+                                                        data-request-no="<?= e($expense['request_no']) ?>">
+                                                    <i class="fas fa-trash me-1"></i>Xóa
+                                                </button>
+                                            <?php endif; ?>
 
                                             <?php if (!empty($paymentsByExpense[(int)$expense['id']])): ?>
                                                 <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#payments-<?= (int)$expense['id'] ?>">Lịch sử TT</button>
@@ -1256,6 +1454,39 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
     </div>
 </div>
 
+<div class="modal fade" id="deleteApprovedModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Xóa đề xuất đã duyệt</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post">
+                <?= csrfInput() ?>
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="id" id="deleteApprovedExpenseId">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Số phiếu</label>
+                        <input type="text" class="form-control" id="deleteApprovedRequestNo" readonly>
+                    </div>
+                    <div class="alert alert-warning mb-3">
+                        ⚠️ Đề xuất này đã được duyệt. Sau khi xoá sẽ được lưu vào lịch sử xoá và không thể khôi phục.
+                    </div>
+                    <div>
+                        <label class="form-label fw-semibold">Lý do xoá <span class="text-danger">*</span></label>
+                        <textarea name="delete_reason" id="deleteApprovedReason" class="form-control" rows="3" required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-danger"><i class="fas fa-trash me-1"></i>Xóa đề xuất</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -1342,6 +1573,16 @@ document.querySelectorAll('.btn-edit-invoice').forEach((button) => {
         document.getElementById('editInvoiceDate').value = invoiceDate;
         document.getElementById('editInvoiceCompany').value = invoiceCompany;
         document.getElementById('editInvoiceFields').classList.toggle('d-none', !hasInvoice);
+    });
+});
+
+document.querySelectorAll('.btn-delete-approved').forEach((button) => {
+    button.addEventListener('click', () => {
+        const expenseId = button.getAttribute('data-expense-id') || '';
+        const requestNo = button.getAttribute('data-request-no') || '';
+        document.getElementById('deleteApprovedExpenseId').value = expenseId;
+        document.getElementById('deleteApprovedRequestNo').value = requestNo;
+        document.getElementById('deleteApprovedReason').value = '';
     });
 });
 
