@@ -359,7 +359,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($deleteReason === '') {
                 setFlash('danger', 'Vui lòng nhập lý do xoá đề xuất đã duyệt.');
             } elseif (!$hasExpenseDeletionLogTable()) {
-                setFlash('danger', 'Chưa khởi tạo bảng lịch sử xoá chi phí. Vui lòng chạy migration expense deletion logs trước khi xoá.');
+                setFlash('danger', 'Tính năng lưu lịch sử xoá hiện tạm thời chưa sẵn sàng. Vui lòng liên hệ quản trị hệ thống.');
             } else {
                 try {
                     $payments = fetchAllSafe(
@@ -629,6 +629,12 @@ $monthStart = $filterMonth . '-01';
 $monthEnd = date('Y-m-t', strtotime($monthStart));
 $deletedMonthStart = $monthStart . ' 00:00:00';
 $deletedMonthEnd = date('Y-m-01 00:00:00', strtotime($monthStart . ' +1 month'));
+$deletedLogWhere = ['deleted_at >= ? AND deleted_at < ?'];
+$deletedLogParams = [$deletedMonthStart, $deletedMonthEnd];
+if (!$canViewDeleted) {
+    $deletedLogWhere[] = 'deleted_by = ?';
+    $deletedLogParams[] = currentUserId();
+}
 $baseWhere = ['er.expense_date BETWEEN ? AND ?'];
 $params = [$monthStart, $monthEnd];
 if ($filterCategory > 0) {
@@ -723,8 +729,8 @@ $deletedLogs = [];
 if ($canViewDeleted && $hasExpenseDeletionLogTable()) {
     $deletedCount = (int)fetchScalarSafe(
         $pdo,
-        'SELECT COUNT(*) FROM expense_deletion_logs WHERE deleted_at >= ? AND deleted_at < ?',
-        [$deletedMonthStart, $deletedMonthEnd],
+        'SELECT COUNT(*) FROM expense_deletion_logs WHERE ' . implode(' AND ', $deletedLogWhere),
+        $deletedLogParams,
         0
     );
     if ($activeTab === 'deleted') {
@@ -732,9 +738,9 @@ if ($canViewDeleted && $hasExpenseDeletionLogTable()) {
             $pdo,
             "SELECT *
              FROM expense_deletion_logs
-             WHERE deleted_at >= ? AND deleted_at < ?
+             WHERE " . implode(' AND ', $deletedLogWhere) . "
              ORDER BY deleted_at DESC",
-            [$deletedMonthStart, $deletedMonthEnd]
+            $deletedLogParams
         );
     }
 }
@@ -1088,7 +1094,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         </thead>
                         <tbody>
                         <?php if (!$hasExpenseDeletionLogTable()): ?>
-                            <tr><td colspan="11" class="text-center text-warning py-4">Chưa có bảng lịch sử xoá chi phí. Vui lòng chạy migration `api/master/migrate_expense_deletion_logs.php`.</td></tr>
+                            <tr><td colspan="11" class="text-center text-warning py-4">Lịch sử xoá chi phí hiện chưa sẵn sàng trên hệ thống này.</td></tr>
                         <?php elseif (!$deletedLogs): ?>
                             <tr><td colspan="11" class="text-center text-muted py-4">Không có đề xuất đã xoá trong tháng này.</td></tr>
                         <?php else: ?>
