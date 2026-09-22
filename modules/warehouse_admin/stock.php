@@ -124,7 +124,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         $statusBadge = 'danger';
                         $statusText = 'Hết hàng';
                         $stockTextClass = 'text-danger';
-                    } elseif ($stock > 0 && $minStock > 0 && $stock <= $minStock) {
+                    } elseif ($stock > 0 && $stock <= $minStock) {
                         $rowClass = 'table-warning';
                         $statusBadge = 'warning text-dark';
                         $statusText = 'Sắp hết';
