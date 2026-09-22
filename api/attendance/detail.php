@@ -30,7 +30,10 @@ if ($attData) {
 }
 
 // OT
-$ot = $pdo->prepare("SELECT * FROM overtime_requests WHERE user_id=? AND ot_date=? AND status='approved'");
+// Lấy OT theo ngày bất kể trạng thái (pending/approved/rejected) để hiển thị đúng
+// tình trạng thực tế cho nhân viên/quản lý. Ưu tiên bản ghi mới nhất nếu có nhiều đơn
+// trùng ngày (ví dụ đơn cũ bị từ chối và đơn mới đang chờ duyệt).
+$ot = $pdo->prepare("SELECT * FROM overtime_requests WHERE user_id=? AND ot_date=? ORDER BY created_at DESC LIMIT 1");
 $ot->execute([$userId, $date]);
 $otData = $ot->fetch(PDO::FETCH_ASSOC) ?: null;
 
