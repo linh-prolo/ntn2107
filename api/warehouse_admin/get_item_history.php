@@ -16,7 +16,7 @@ $pdo = getDBConnection();
 
 $item = fetchOneSafe($pdo, "
     SELECT i.id, i.item_code, i.item_name, i.unit, i.min_stock,
-           COALESCE(SUM(CASE WHEN t.type='import' THEN t.qty ELSE -t.qty END), 0) AS stock
+           COALESCE(SUM(CASE WHEN t.type='import' THEN t.qty WHEN t.type='export' THEN -t.qty ELSE 0 END), 0) AS stock
     FROM wa_items i
     LEFT JOIN wa_transactions t ON t.item_id = i.id
     WHERE i.id = ? AND i.is_active = 1

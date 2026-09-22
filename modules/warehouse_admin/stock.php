@@ -28,7 +28,7 @@ $stocks = fetchAllSafe($pdo, "
     SELECT s.*
     FROM (
         SELECT i.id, i.item_code, i.item_name, i.unit, i.min_stock, c.name AS category_name,
-               COALESCE(SUM(CASE WHEN t.type='import' THEN t.qty ELSE -t.qty END), 0) AS stock
+               COALESCE(SUM(CASE WHEN t.type='import' THEN t.qty WHEN t.type='export' THEN -t.qty ELSE 0 END), 0) AS stock
         FROM wa_items i
         LEFT JOIN wa_categories c ON c.id = i.category_id
         LEFT JOIN wa_transactions t ON t.item_id = i.id
@@ -158,6 +158,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <div class="fw-semibold" id="historyItemTitle">--</div>
                     <div class="text-muted">Tồn hiện tại: <strong id="historyCurrentStock">0</strong></div>
                 </div>
+                <div class="alert alert-danger d-none" id="historyError"></div>
                 <div id="historyLoading" class="text-muted py-3">Đang tải dữ liệu...</div>
                 <div class="table-responsive d-none" id="historyTableWrap">
                     <table class="table table-hover align-middle mb-0">
@@ -187,6 +188,7 @@ window.addEventListener('load', function() {
     const modalEl = document.getElementById('modalItemHistory');
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     const historyLoading = document.getElementById('historyLoading');
+    const historyError = document.getElementById('historyError');
     const historyTableWrap = document.getElementById('historyTableWrap');
     const historyTableBody = document.getElementById('historyTableBody');
     const historyItemTitle = document.getElementById('historyItemTitle');
@@ -212,6 +214,8 @@ window.addEventListener('load', function() {
     async function loadHistory(itemId) {
         historyLoading.textContent = 'Đang tải dữ liệu...';
         historyLoading.classList.remove('d-none');
+        historyError.classList.add('d-none');
+        historyError.textContent = '';
         historyTableWrap.classList.add('d-none');
         historyTableBody.innerHTML = '';
         historyItemTitle.textContent = '--';
@@ -251,9 +255,10 @@ window.addEventListener('load', function() {
             historyTableWrap.classList.remove('d-none');
         } catch (err) {
             historyLoading.classList.add('d-none');
+            historyError.textContent = err.message || 'Không thể tải lịch sử giao dịch';
+            historyError.classList.remove('d-none');
             historyTableWrap.classList.remove('d-none');
             historyTableBody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">Không thể tải lịch sử giao dịch</td></tr>';
-            alert(err.message || 'Không thể tải lịch sử giao dịch');
         }
     }
 
