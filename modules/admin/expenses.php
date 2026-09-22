@@ -1099,8 +1099,18 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <tr><td colspan="11" class="text-center text-muted py-4">Không có đề xuất đã xoá trong tháng này.</td></tr>
                         <?php else: ?>
                             <?php foreach ($deletedLogs as $log): ?>
+                                <?php
+                                $deletedSearchText = ($log['request_no'] ?? '') . ' '
+                                    . ($log['purpose'] ?? '') . ' '
+                                    . ($log['category_name'] ?? '') . ' '
+                                    . ($log['requested_name'] ?? '') . ' '
+                                    . ($log['deleted_name'] ?? '');
+                                $deletedSearchText = function_exists('mb_strtolower')
+                                    ? mb_strtolower($deletedSearchText, 'UTF-8')
+                                    : strtolower($deletedSearchText);
+                                ?>
                                 <tr class="expense-row"
-                                    data-search="<?= e(strtolower(($log['request_no'] ?? '') . ' ' . ($log['purpose'] ?? '') . ' ' . ($log['category_name'] ?? '') . ' ' . ($log['requested_name'] ?? '') . ' ' . ($log['deleted_name'] ?? ''))) ?>">
+                                    data-search="<?= e($deletedSearchText) ?>">
                                     <td class="fw-semibold text-danger"><?= e($log['request_no']) ?></td>
                                     <td><?= e(formatDate($log['expense_date'])) ?></td>
                                     <td><?= e($log['purpose'] ?? '—') ?></td>
@@ -1320,7 +1330,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                                         data-bs-toggle="modal"
                                                         data-bs-target="#deleteApprovedModal"
                                                         data-expense-id="<?= (int)$expense['id'] ?>"
-                                                        data-request-no="<?= e($expense['request_no']) ?>">
+                                                        data-request-no="<?= htmlspecialchars((string)$expense['request_no'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
                                                     <i class="fas fa-trash me-1"></i>Xóa
                                                 </button>
                                             <?php endif; ?>
@@ -1565,7 +1575,7 @@ document.querySelectorAll('.btn-edit-invoice').forEach((button) => {
 document.querySelectorAll('.btn-delete-approved').forEach((button) => {
     button.addEventListener('click', () => {
         const expenseId = button.getAttribute('data-expense-id') || '';
-        const requestNo = button.getAttribute('data-request-no') || '';
+        const requestNo = button.dataset.requestNo || button.getAttribute('data-request-no') || '';
         document.getElementById('deleteApprovedExpenseId').value = expenseId;
         document.getElementById('deleteApprovedRequestNo').value = requestNo;
         document.getElementById('deleteApprovedReason').value = '';
