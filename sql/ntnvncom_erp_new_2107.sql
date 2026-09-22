@@ -4535,7 +4535,7 @@ ALTER TABLE `expense_categories`
 -- AUTO_INCREMENT cho bảng `expense_deletion_logs`
 --
 ALTER TABLE `expense_deletion_logs`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT cho bảng `expense_payments`

@@ -1,20 +1,18 @@
 <?php
 /**
  * One-time migration: create expense_deletion_logs table for approved expense deletion audit.
- * Run this script once via CLI or browser (requires director role).
+ * Run this script once via CLI.
  *
- * Usage (CLI): php api/master/migrate_expense_deletion_logs.php
- * Usage (web): visit /erp/api/master/migrate_expense_deletion_logs.php as director
+ * Usage: php api/master/migrate_expense_deletion_logs.php
  */
 if (php_sapi_name() !== 'cli') {
-    require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
-    require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
-    requireLogin();
-    requireRole('director');
+    http_response_code(403);
     header('Content-Type: text/plain; charset=utf-8');
-} else {
-    require_once __DIR__ . '/../../config/database.php';
+    echo "This migration is CLI-only.\n";
+    exit(1);
 }
+
+require_once __DIR__ . '/../../config/database.php';
 
 $pdo = getDBConnection();
 

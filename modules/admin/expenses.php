@@ -362,18 +362,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setFlash('danger', 'Tính năng lưu lịch sử xoá hiện tạm thời chưa sẵn sàng. Vui lòng liên hệ quản trị hệ thống.');
             } else {
                 try {
+                    $pdo->beginTransaction();
+                    $lockedExpense = fetchOneSafe(
+                        $pdo,
+                        "SELECT er.*, ec.category_name, ru.full_name AS requested_name, au.full_name AS approved_name
+                         FROM expense_requests er
+                         JOIN expense_categories ec ON ec.id = er.category_id
+                         JOIN users ru ON ru.id = er.requested_by
+                         LEFT JOIN users au ON au.id = er.approved_by
+                         WHERE er.id = ?
+                         LIMIT 1
+                         FOR UPDATE",
+                        [$expenseId]
+                    );
+                    if (!$lockedExpense || $lockedExpense['status'] !== 'approved') {
+                        $pdo->rollBack();
+                        setFlash('danger', 'Đề xuất đã thay đổi trạng thái, vui lòng tải lại trang và thử lại.');
+                        redirect($expensePageUrl(['tab' => $activeTab]));
+                    }
+
                     $payments = fetchAllSafe(
                         $pdo,
                         "SELECT ep.*, u.full_name AS paid_by_name
                          FROM expense_payments ep
                          LEFT JOIN users u ON u.id = ep.paid_by
                          WHERE ep.expense_id = ?
-                         ORDER BY ep.payment_date ASC, ep.id ASC",
+                         ORDER BY ep.payment_date ASC, ep.id ASC
+                         FOR UPDATE",
                         [$expenseId]
                     );
                     $paymentsSnapshot = json_encode($payments, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $paidAmount = 0.0;
+                    foreach ($payments as $payment) {
+                        $paidAmount += (float)($payment['amount'] ?? 0);
+                    }
 
-                    $pdo->beginTransaction();
                     $pdo->prepare(
                         "INSERT INTO expense_deletion_logs (
                             original_expense_id, request_no, category_id, category_name, amount, expense_date, purpose,
@@ -384,26 +407,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                         )"
                     )->execute([
-                        (int)$expense['id'],
-                        $expense['request_no'],
-                        $expense['category_id'] !== null ? (int)$expense['category_id'] : null,
-                        $expense['category_name'] ?? null,
-                        (float)$expense['amount'],
-                        $expense['expense_date'],
-                        $expense['purpose'] ?? null,
-                        !empty($expense['has_invoice']) ? 1 : 0,
-                        $expense['invoice_no'] ?? null,
-                        $expense['invoice_date'] ?? null,
-                        $expense['invoice_company'] ?? null,
-                        $expense['payment_method'] ?? null,
-                        $expense['note'] ?? null,
-                        $expense['status'],
-                        $expense['requested_by'] !== null ? (int)$expense['requested_by'] : null,
-                        $expense['requested_name'] ?? null,
-                        $expense['approved_by'] !== null ? (int)$expense['approved_by'] : null,
-                        $expense['approved_name'] ?? null,
-                        $expense['approved_at'] ?? null,
-                        (float)$expense['paid_amount'],
+                        (int)$lockedExpense['id'],
+                        $lockedExpense['request_no'],
+                        $lockedExpense['category_id'] !== null ? (int)$lockedExpense['category_id'] : null,
+                        $lockedExpense['category_name'] ?? null,
+                        (float)$lockedExpense['amount'],
+                        $lockedExpense['expense_date'],
+                        $lockedExpense['purpose'] ?? null,
+                        !empty($lockedExpense['has_invoice']) ? 1 : 0,
+                        $lockedExpense['invoice_no'] ?? null,
+                        $lockedExpense['invoice_date'] ?? null,
+                        $lockedExpense['invoice_company'] ?? null,
+                        $lockedExpense['payment_method'] ?? null,
+                        $lockedExpense['note'] ?? null,
+                        $lockedExpense['status'],
+                        $lockedExpense['requested_by'] !== null ? (int)$lockedExpense['requested_by'] : null,
+                        $lockedExpense['requested_name'] ?? null,
+                        $lockedExpense['approved_by'] !== null ? (int)$lockedExpense['approved_by'] : null,
+                        $lockedExpense['approved_name'] ?? null,
+                        $lockedExpense['approved_at'] ?? null,
+                        $paidAmount,
                         $paymentsSnapshot !== false ? $paymentsSnapshot : '[]',
                         currentUserId(),
                         $user['full_name'] ?? null,
