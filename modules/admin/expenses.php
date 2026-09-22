@@ -367,8 +367,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $pdo,
                         "SELECT er.*, ec.category_name, ru.full_name AS requested_name, au.full_name AS approved_name
                          FROM expense_requests er
-                         JOIN expense_categories ec ON ec.id = er.category_id
-                         JOIN users ru ON ru.id = er.requested_by
+                         LEFT JOIN expense_categories ec ON ec.id = er.category_id
+                         LEFT JOIN users ru ON ru.id = er.requested_by
                          LEFT JOIN users au ON au.id = er.approved_by
                          WHERE er.id = ?
                          LIMIT 1
@@ -392,6 +392,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         [$expenseId]
                     );
                     $paymentsSnapshot = json_encode($payments, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    if ($paymentsSnapshot === false) {
+                        throw new RuntimeException('Không thể tạo snapshot thanh toán để lưu lịch sử xoá.');
+                    }
                     $paidAmount = 0.0;
                     foreach ($payments as $payment) {
                         $paidAmount += (float)($payment['amount'] ?? 0);
@@ -427,7 +430,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $lockedExpense['approved_name'] ?? null,
                         $lockedExpense['approved_at'] ?? null,
                         $paidAmount,
-                        $paymentsSnapshot !== false ? $paymentsSnapshot : '[]',
+                        $paymentsSnapshot,
                         currentUserId(),
                         $user['full_name'] ?? null,
                         $deleteReason,

@@ -17,7 +17,14 @@ require_once __DIR__ . '/../../config/database.php';
 $pdo = getDBConnection();
 
 try {
-    $tableExists = (bool)$pdo->query("SHOW TABLES LIKE 'expense_deletion_logs'")->fetchColumn();
+    $checkStmt = $pdo->prepare(
+        'SELECT 1
+         FROM information_schema.tables
+         WHERE table_schema = DATABASE() AND table_name = ?
+         LIMIT 1'
+    );
+    $checkStmt->execute(['expense_deletion_logs']);
+    $tableExists = (bool)$checkStmt->fetchColumn();
     if ($tableExists) {
         echo "Table 'expense_deletion_logs' already exists. Nothing to do.\n";
         exit;
