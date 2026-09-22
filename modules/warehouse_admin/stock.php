@@ -39,7 +39,7 @@ $stocks = fetchAllSafe($pdo, "
     ORDER BY
         CASE
             WHEN s.stock <= 0 THEN 0
-            WHEN s.stock <= COALESCE(s.min_stock, 0) THEN 1
+            WHEN s.stock > 0 AND COALESCE(s.min_stock, 0) > 0 AND s.stock <= COALESCE(s.min_stock, 0) THEN 1
             ELSE 2
         END ASC,
         s.stock ASC,
@@ -239,9 +239,6 @@ window.addEventListener('load', function() {
                 headers: { 'Accept': 'application/json' },
                 signal: historyAbortController.signal
             });
-            if (res.redirected) {
-                throw new Error('Phiên đăng nhập đã hết hạn hoặc bạn không có quyền truy cập. Vui lòng đăng nhập lại.');
-            }
             const rawBody = await res.text();
             let data = null;
             let hasParseError = false;
@@ -260,6 +257,9 @@ window.addEventListener('load', function() {
                     throw new Error('Phiên đăng nhập đã hết hạn hoặc bạn không có quyền truy cập. Vui lòng đăng nhập lại.');
                 }
                 throw new Error('Lỗi server (HTTP ' + res.status + ')');
+            }
+            if (res.redirected && (!data || !data.ok)) {
+                throw new Error('Phiên đăng nhập đã hết hạn hoặc bạn không có quyền truy cập. Vui lòng đăng nhập lại.');
             }
             if (hasParseError) {
                 throw new Error('Phản hồi JSON không hợp lệ từ máy chủ.');
