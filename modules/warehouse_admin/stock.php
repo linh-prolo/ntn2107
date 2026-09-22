@@ -74,7 +74,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <div class="col-md-auto">
                     <div class="form-check mt-1">
                         <input class="form-check-input" type="checkbox" value="1" id="lowStockOnly" name="low_stock_only" <?= $lowStockOnly ? 'checked' : '' ?>>
-                        <label class="form-check-label" for="lowStockOnly">Chỉ hiện vật tư sắp hết/hết hàng</label>
+                        <label class="form-check-label" for="lowStockOnly">Chỉ hiện vật tư sắp hết/hết hàng (bao gồm tồn = 0)</label>
                     </div>
                 </div>
                 <div class="col-auto">
@@ -134,7 +134,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <td class="text-end"><?= e(number_format($minStock, 2, ',', '.')) ?></td>
                         <td><span class="badge bg-<?= $statusBadge ?>"><?= $statusText ?></span></td>
                         <td class="text-end">
-                            <button type="button" class="btn btn-sm btn-outline-primary btn-item-history" data-item-id="<?= (int)$s['id'] ?>">
+                            <button type="button" class="btn btn-sm btn-outline-primary btn-item-history" data-item-id="<?= (int)$s['id'] ?>" aria-label="Xem lịch sử vật tư <?= e($s['item_code']) ?> - <?= e($s['item_name']) ?>">
                                 <i class="fas fa-history me-1"></i>Lịch sử
                             </button>
                         </td>
@@ -246,9 +246,10 @@ window.addEventListener('load', function() {
             } else {
                 historyTableBody.innerHTML = history.map(function(row) {
                     const isImport = row.type === 'import';
+                    const badgeClass = isImport ? 'badge bg-success' : 'badge bg-warning text-dark';
                     return '<tr>'
                         + '<td>' + escapeHtml(formatDateTime(row.transacted_at)) + '</td>'
-                        + '<td><span class="badge bg-' + (isImport ? 'success' : 'warning text-dark') + '">' + (isImport ? 'Nhập' : 'Xuất') + '</span></td>'
+                        + '<td><span class="' + badgeClass + '">' + (isImport ? 'Nhập' : 'Xuất') + '</span></td>'
                         + '<td class="text-end fw-semibold">' + formatQty(row.qty) + '</td>'
                         + '<td>' + escapeHtml(row.ref_no || '') + '</td>'
                         + '<td>' + escapeHtml(row.note || '') + '</td>'
