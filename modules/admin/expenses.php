@@ -379,6 +379,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $pdo->rollBack();
                         setFlash('danger', 'Đề xuất đã thay đổi trạng thái, vui lòng tải lại trang và thử lại.');
                         redirect($expensePageUrl(['tab' => $activeTab]));
+                        exit;
                     }
 
                     $payments = fetchAllSafe(
@@ -657,10 +658,6 @@ $deletedMonthStart = $monthStart . ' 00:00:00';
 $deletedMonthEnd = date('Y-m-01 00:00:00', strtotime($monthStart . ' +1 month'));
 $deletedLogWhere = ['deleted_at >= ? AND deleted_at < ?'];
 $deletedLogParams = [$deletedMonthStart, $deletedMonthEnd];
-if (!$canViewDeleted) {
-    $deletedLogWhere[] = 'deleted_by = ?';
-    $deletedLogParams[] = currentUserId();
-}
 $baseWhere = ['er.expense_date BETWEEN ? AND ?'];
 $params = [$monthStart, $monthEnd];
 if ($filterCategory > 0) {
