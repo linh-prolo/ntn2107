@@ -44,7 +44,7 @@ $stmt->execute([$periodId]);
 $slips = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // ════════════════════════════════════════════════════════════════════
-// CẤU TRÚC CỘT — khớp hoàn toàn với slip_list.php
+// CẤU TRÚC CỘT — bám theo slip_list.php, thêm "Ăn ca OT" ở cuối để tránh lệch mapping cột
 // ════════════════════════════════════════════════════════════════════
 // A  #
 // B  Mã NV
@@ -81,9 +81,10 @@ $slips = $stmt->fetchAll(PDO::FETCH_ASSOC);
 // AG Trừ KPI
 // AH Thực nhận
 // AI Chuyển khoản
-// AJ Ghi chú
+// AJ Ăn ca OT
+// AK Ghi chú
 
-$lastCol = 'AJ';
+$lastCol = 'AK';
 
 $spreadsheet = new Spreadsheet();
 $sheet = $spreadsheet->getActiveSheet();
@@ -136,7 +137,7 @@ $groups = [
     'Y3:AA3'  => ['KHẤU TRỪ TỰ ĐỘNG',   '922b21'],
     'AB3:AE3' => ['ĐIỀU CHỈNH THỦ CÔNG','6e2f1a'],
     'AF3:AH3' => ['KẾT QUẢ',             '1e8449'],
-    'AI3:AJ3' => ['THÔNG TIN',           '555555'],
+    'AI3:AK3' => ['THÔNG TIN',           '555555'],
 ];
 foreach ($groups as $range => [$label, $color]) {
     [$sc] = explode(':', $range);
@@ -193,7 +194,8 @@ $headers = [
     'AH' => 'Thực nhận',
     // Thông tin
     'AI' => 'Chuyển khoản',
-    'AJ' => 'Ghi chú',
+    'AJ' => 'Ăn ca OT',
+    'AK' => 'Ghi chú',
 ];
 
 foreach ($headers as $col => $label) {
@@ -217,7 +219,7 @@ $numFmt   = '#,##0.0';
 
 // Cột cần format tiền
 $moneyCols = ['H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X',
-              'Y','Z','AA','AB','AC','AD','AE','AF','AG','AH','AI'];
+              'Y','Z','AA','AB','AC','AD','AE','AF','AG','AH','AI','AJ'];
 
 // Cột tổng cộng
 $totalCols = array_fill_keys($moneyCols, 0);
@@ -271,7 +273,8 @@ foreach ($slips as $i => $s) {
         'AH' => (float)$s['net_salary'],
         // Thông tin
         'AI' => (float)$s['bank_transfer'],
-        'AJ' => $s['remark'] ?? '',
+        'AJ' => (float)($s['ot_meal_bonus'] ?? 0),
+        'AK' => $s['remark'] ?? '',
     ];
 
     foreach ($data as $col => $val) {
@@ -375,7 +378,7 @@ $colWidths = [
     'Y'  => 11,   'Z'  => 11,   'AA' => 11,
     'AB' => 13,   'AC' => 11,   'AD' => 11,   'AE' => 11,
     'AF' => 13,   'AG' => 11,   'AH' => 13,
-    'AI' => 13,   'AJ' => 28,
+    'AI' => 13,   'AJ' => 11,   'AK' => 28,
 ];
 foreach ($colWidths as $col => $w) {
     $sheet->getColumnDimension($col)->setWidth($w);

@@ -158,7 +158,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     </div>
                     <table class="table table-sm table-bordered mb-4">
                         <tr class="table-dark">
-                            <td class="fw-bold">Lương Tổng / Gross salary (=1+3+4+5+5b+5c+5d+6+7)</td>
+                            <td class="fw-bold">Lương Tổng / Gross salary (=1+3+4+5+5b+5c+5d+5e+6+7)</td>
                             <td class="text-end fw-bold">
                                 <?= number_format(
                                     $slipDetail['basic_salary'] +
@@ -168,6 +168,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 									(float)($slipDetail['housing_allowance'] ?? 0) +
                                     (float)($slipDetail['responsibility_allowance'] ?? 0) +
                                     (float)($slipDetail['seniority_allowance'] ?? 0) +
+                                    (float)($slipDetail['ot_meal_bonus'] ?? 0) +
                                     $slipDetail['performance_bonus'] +
 									
                                     (float)$slipDetail['attendance_bonus']
@@ -183,13 +184,14 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 							['(5b) Trợ cấp nhà ở / Housing allowance',             'housing_allowance'],
                             ['(5c) PC Trách nhiệm / Responsibility allowance',      'responsibility_allowance'],
                             ['(5d) PC Thâm niên / Seniority allowance',             'seniority_allowance'],
-                            ['(6) Thưởng hiệu quả / Job effectiveness bonus',      'performance_bonus'],
+							['(5e) Trợ cấp ăn ca OT / OT meal allowance',           'ot_meal_bonus'],
+							['(6) Thưởng hiệu quả / Job effectiveness bonus',      'performance_bonus'],
                         ];
                         foreach ($items as [$label, $key]):
-                            if (in_array($key, ['responsibility_allowance', 'seniority_allowance'], true)
-                                && (float)($slipDetail[$key] ?? 0) <= 0) {
-                                continue;
-                            }
+							if (in_array($key, ['responsibility_allowance', 'seniority_allowance', 'ot_meal_bonus'], true)
+							    && (float)($slipDetail[$key] ?? 0) <= 0) {
+							    continue;
+							}
                         ?>
                         <tr>
                             <td class="text-muted small">- <?= $label ?></td>
@@ -256,16 +258,22 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 							['(19b) Trợ cấp nhà ở thực nhận / Housing received',      'housing_received'],
                            ['(19c) PC Trách nhiệm thực nhận / Responsibility received', 'responsibility_allowance_received'],
                            ['(19d) PC Thâm niên thực nhận / Seniority received',       'seniority_allowance_received'],
+                            ['(19e) Trợ cấp ăn ca OT / OT meal allowance',             'ot_meal_bonus'],
                             ['(20) Thưởng hiệu quả thực nhận / Performance received', 'performance_bonus'],
                         ];
                         foreach ($items2 as [$label, $key]):
-                           if (in_array($key, ['responsibility_allowance_received', 'seniority_allowance_received'], true)
-                               && (float)($slipDetail[$key] ?? 0) <= 0) {
-                               continue;
+                           if (in_array($key, ['responsibility_allowance_received', 'seniority_allowance_received', 'ot_meal_bonus'], true)
+                              && (float)($slipDetail[$key] ?? 0) <= 0) {
+                              continue;
                            }
                         ?>
                         <tr>
-                           <td class="text-muted small"><?= $label ?></td>
+                           <td class="text-muted small">
+                              <?= $label ?>
+                              <?php if ($key === 'ot_meal_bonus' && (float)($slipDetail[$key] ?? 0) > 0): ?>
+                              <span class="badge bg-info ms-1" style="font-size:10px"><?= (int)($slipDetail['ot_meal_days'] ?? 0) ?> ngày</span>
+                              <?php endif; ?>
+                           </td>
                            <td class="text-end"><?= number_format((float)($slipDetail[$key] ?? 0), 0, '.', ',') ?></td>
                         </tr>
                         <?php endforeach; ?>
