@@ -5009,13 +5009,6 @@ ALTER TABLE `employee_shifts`
 ALTER TABLE `expense_payments`
   ADD CONSTRAINT `fk_ep_expense` FOREIGN KEY (`expense_id`) REFERENCES `expense_requests` (`id`) ON DELETE CASCADE;
 
---
--- Ràng buộc cho bảng `expense_deletion_logs`
---
-ALTER TABLE `expense_deletion_logs`
-  ADD CONSTRAINT `fk_edl_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`);
-
---
 -- Ràng buộc cho bảng `expense_requests`
 --
 ALTER TABLE `expense_requests`

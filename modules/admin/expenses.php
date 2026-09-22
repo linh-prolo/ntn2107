@@ -98,49 +98,20 @@ $findExpense = static function (int $expenseId) use ($pdo): ?array {
     );
 };
 
-$ensureExpenseDeletionLogTable = static function () use ($pdo): void {
-    static $ensured = false;
-    if ($ensured) {
-        return;
+$hasExpenseDeletionLogTable = static function () use ($pdo): bool {
+    static $exists = null;
+    if ($exists !== null) {
+        return $exists;
     }
 
-    $pdo->exec(
-        "CREATE TABLE IF NOT EXISTS expense_deletion_logs (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            original_expense_id INT NOT NULL,
-            request_no VARCHAR(50) NOT NULL,
-            category_id INT NULL,
-            category_name VARCHAR(100) NULL,
-            amount DECIMAL(15,2) NOT NULL,
-            expense_date DATE NOT NULL,
-            purpose TEXT NULL,
-            has_invoice TINYINT(1) DEFAULT 0,
-            invoice_no VARCHAR(100) NULL,
-            invoice_date DATE NULL,
-            invoice_company VARCHAR(255) NULL,
-            payment_method VARCHAR(20) NULL,
-            note TEXT NULL,
-            status_before_delete VARCHAR(20) NOT NULL,
-            requested_by INT NULL,
-            requested_name VARCHAR(150) NULL,
-            approved_by INT NULL,
-            approved_name VARCHAR(150) NULL,
-            approved_at DATETIME NULL,
-            paid_amount DECIMAL(15,2) DEFAULT 0,
-            payments_snapshot TEXT NULL COMMENT 'JSON snapshot của các khoản đã thanh toán',
-            deleted_by INT NOT NULL,
-            deleted_name VARCHAR(150) NULL,
-            delete_reason TEXT NOT NULL,
-            deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            KEY idx_edl_original_expense (original_expense_id),
-            KEY idx_edl_expense_date (expense_date),
-            KEY idx_edl_deleted_at (deleted_at),
-            KEY idx_edl_deleted_by (deleted_by),
-            CONSTRAINT fk_edl_deleted_by FOREIGN KEY (deleted_by) REFERENCES users(id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
-    );
+    try {
+        $pdo->query('SELECT 1 FROM expense_deletion_logs LIMIT 1');
+        $exists = true;
+    } catch (Throwable $e) {
+        $exists = false;
+    }
 
-    $ensured = true;
+    return $exists;
 };
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -387,9 +358,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 setFlash('danger', 'Bạn không có quyền xoá đề xuất đã duyệt.');
             } elseif ($deleteReason === '') {
                 setFlash('danger', 'Vui lòng nhập lý do xoá đề xuất đã duyệt.');
+            } elseif (!$hasExpenseDeletionLogTable()) {
+                setFlash('danger', 'Chưa khởi tạo bảng lịch sử xoá chi phí. Vui lòng chạy migration expense deletion logs trước khi xoá.');
             } else {
                 try {
-                    $ensureExpenseDeletionLogTable();
                     $payments = fetchAllSafe(
                         $pdo,
                         "SELECT ep.*, u.full_name AS paid_by_name
@@ -655,6 +627,8 @@ if (isset($_SESSION['_old_input']) && is_array($_SESSION['_old_input'])) {
 $showForm = !empty($errors) || $editExpense !== null || isset($_GET['show_form']);
 $monthStart = $filterMonth . '-01';
 $monthEnd = date('Y-m-t', strtotime($monthStart));
+$deletedMonthStart = $monthStart . ' 00:00:00';
+$deletedMonthEnd = date('Y-m-01 00:00:00', strtotime($monthStart . ' +1 month'));
 $baseWhere = ['er.expense_date BETWEEN ? AND ?'];
 $params = [$monthStart, $monthEnd];
 if ($filterCategory > 0) {
@@ -746,17 +720,21 @@ $historyCount = (int)fetchScalarSafe(
 );
 $deletedCount = 0;
 $deletedLogs = [];
-if ($canViewDeleted) {
-    $ensureExpenseDeletionLogTable();
-    $deletedCount = (int)fetchScalarSafe($pdo, 'SELECT COUNT(*) FROM expense_deletion_logs', [], 0);
+if ($canViewDeleted && $hasExpenseDeletionLogTable()) {
+    $deletedCount = (int)fetchScalarSafe(
+        $pdo,
+        'SELECT COUNT(*) FROM expense_deletion_logs WHERE deleted_at >= ? AND deleted_at < ?',
+        [$deletedMonthStart, $deletedMonthEnd],
+        0
+    );
     if ($activeTab === 'deleted') {
         $deletedLogs = fetchAllSafe(
             $pdo,
             "SELECT *
              FROM expense_deletion_logs
-             WHERE expense_date BETWEEN ? AND ?
+             WHERE deleted_at >= ? AND deleted_at < ?
              ORDER BY deleted_at DESC",
-            [$monthStart, $monthEnd]
+            [$deletedMonthStart, $deletedMonthEnd]
         );
     }
 }
@@ -948,15 +926,15 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <li class="nav-item"><a class="nav-link <?= $activeTab === 'pending' ? 'active' : '' ?>" href="/erp/<?= e($expensePageUrl(['tab' => 'pending', 'status' => ''])) ?>">Chờ duyệt <span class="badge bg-warning text-dark ms-1"><?= $pendingCount ?></span></a></li>
             <?php endif; ?>
             <li class="nav-item"><a class="nav-link <?= $activeTab === 'history' ? 'active' : '' ?>" href="/erp/<?= e($expensePageUrl(['tab' => 'history', 'status' => ''])) ?>">Lịch sử <span class="badge bg-success ms-1"><?= $historyCount ?></span></a></li>
+            <?php if ($canViewDeleted): ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= $activeTab === 'deleted' ? 'active' : '' ?>" href="/erp/<?= e($expensePageUrl(['tab' => 'deleted', 'status' => '', 'category_id' => 0, 'payment_status' => ''])) ?>">
+                        <i class="fas fa-trash-alt me-1"></i>Đã xoá
+                        <span class="badge bg-danger ms-1"><?= $deletedCount ?></span>
+                    </a>
+                </li>
+            <?php endif; ?>
             <?php if ($canManageCategories): ?>
-                <?php if ($canViewDeleted): ?>
-                    <li class="nav-item">
-                        <a class="nav-link <?= $activeTab === 'deleted' ? 'active' : '' ?>" href="/erp/<?= e($expensePageUrl(['tab' => 'deleted', 'status' => '', 'category_id' => 0, 'payment_status' => ''])) ?>">
-                            <i class="fas fa-trash-alt me-1"></i>Đã xoá
-                            <span class="badge bg-danger ms-1"><?= $deletedCount ?></span>
-                        </a>
-                    </li>
-                <?php endif; ?>
                 <li class="nav-item">
                     <a class="nav-link <?= $activeTab === 'categories' ? 'active' : '' ?>" href="/erp/<?= e($expensePageUrl(['tab' => 'categories'])) ?>">
                         <i class="fas fa-tags me-1"></i>Loại chi phí
@@ -1109,7 +1087,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             </tr>
                         </thead>
                         <tbody>
-                        <?php if (!$deletedLogs): ?>
+                        <?php if (!$hasExpenseDeletionLogTable()): ?>
+                            <tr><td colspan="10" class="text-center text-warning py-4">Chưa có bảng lịch sử xoá chi phí. Vui lòng chạy migration `api/master/migrate_expense_deletion_logs.php`.</td></tr>
+                        <?php elseif (!$deletedLogs): ?>
                             <tr><td colspan="10" class="text-center text-muted py-4">Không có đề xuất đã xoá trong tháng này.</td></tr>
                         <?php else: ?>
                             <?php foreach ($deletedLogs as $log): ?>
