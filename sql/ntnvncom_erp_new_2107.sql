@@ -1668,6 +1668,41 @@ INSERT INTO `expense_categories` (`id`, `category_name`, `is_active`) VALUES
 -- --------------------------------------------------------
 
 --
+-- Cấu trúc bảng cho bảng `expense_deletion_logs`
+--
+
+CREATE TABLE `expense_deletion_logs` (
+  `id` int(11) NOT NULL,
+  `original_expense_id` int(11) NOT NULL,
+  `request_no` varchar(50) NOT NULL,
+  `category_id` int(11) DEFAULT NULL,
+  `category_name` varchar(100) DEFAULT NULL,
+  `amount` decimal(15,2) NOT NULL,
+  `expense_date` date NOT NULL,
+  `purpose` text DEFAULT NULL,
+  `has_invoice` tinyint(1) DEFAULT 0,
+  `invoice_no` varchar(100) DEFAULT NULL,
+  `invoice_date` date DEFAULT NULL,
+  `invoice_company` varchar(255) DEFAULT NULL,
+  `payment_method` varchar(20) DEFAULT NULL,
+  `note` text DEFAULT NULL,
+  `status_before_delete` varchar(20) NOT NULL,
+  `requested_by` int(11) DEFAULT NULL,
+  `requested_name` varchar(150) DEFAULT NULL,
+  `approved_by` int(11) DEFAULT NULL,
+  `approved_name` varchar(150) DEFAULT NULL,
+  `approved_at` datetime DEFAULT NULL,
+  `paid_amount` decimal(15,2) DEFAULT 0.00,
+  `payments_snapshot` text DEFAULT NULL COMMENT 'JSON snapshot của các khoản đã thanh toán',
+  `deleted_by` int(11) NOT NULL,
+  `deleted_name` varchar(150) DEFAULT NULL,
+  `delete_reason` text NOT NULL,
+  `deleted_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Cấu trúc bảng cho bảng `expense_payments`
 --
 
@@ -3845,6 +3880,16 @@ ALTER TABLE `expense_categories`
   ADD PRIMARY KEY (`id`);
 
 --
+-- Chỉ mục cho bảng `expense_deletion_logs`
+--
+ALTER TABLE `expense_deletion_logs`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_edl_original_expense` (`original_expense_id`),
+  ADD KEY `idx_edl_expense_date` (`expense_date`),
+  ADD KEY `idx_edl_deleted_at` (`deleted_at`),
+  ADD KEY `idx_edl_deleted_by` (`deleted_by`);
+
+--
 -- Chỉ mục cho bảng `expense_payments`
 --
 ALTER TABLE `expense_payments`
@@ -4487,6 +4532,12 @@ ALTER TABLE `expense_categories`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
+-- AUTO_INCREMENT cho bảng `expense_deletion_logs`
+--
+ALTER TABLE `expense_deletion_logs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT cho bảng `expense_payments`
 --
 ALTER TABLE `expense_payments`
@@ -4958,7 +5009,6 @@ ALTER TABLE `employee_shifts`
 ALTER TABLE `expense_payments`
   ADD CONSTRAINT `fk_ep_expense` FOREIGN KEY (`expense_id`) REFERENCES `expense_requests` (`id`) ON DELETE CASCADE;
 
---
 -- Ràng buộc cho bảng `expense_requests`
 --
 ALTER TABLE `expense_requests`
