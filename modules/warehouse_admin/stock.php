@@ -35,11 +35,11 @@ $stocks = fetchAllSafe($pdo, "
         WHERE " . implode(' AND ', $where) . "
         GROUP BY i.id, i.item_code, i.item_name, i.unit, COALESCE(i.min_stock, 0), c.name
     ) s
-    " . ($lowStockOnly ? 'WHERE s.stock <= s.min_stock' : '') . "
+    " . ($lowStockOnly ? 'WHERE s.stock <= COALESCE(s.min_stock, 0)' : '') . "
     ORDER BY
         CASE
             WHEN s.stock <= 0 THEN 0
-            WHEN s.stock <= s.min_stock THEN 1
+            WHEN s.stock <= COALESCE(s.min_stock, 0) THEN 1
             ELSE 2
         END ASC,
         s.stock ASC,
@@ -157,6 +157,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <div class="mb-3">
                     <div class="fw-semibold" id="historyItemTitle">--</div>
                     <div class="text-muted">Tồn hiện tại: <strong id="historyCurrentStock">0</strong></div>
+                    <div class="small text-muted" id="historyLimitNote"></div>
                 </div>
                 <div class="alert alert-danger d-none" id="historyError"></div>
                 <div id="historyLoading" class="text-muted py-3">Đang tải dữ liệu...</div>
@@ -193,6 +194,7 @@ window.addEventListener('load', function() {
     const historyTableBody = document.getElementById('historyTableBody');
     const historyItemTitle = document.getElementById('historyItemTitle');
     const historyCurrentStock = document.getElementById('historyCurrentStock');
+    const historyLimitNote = document.getElementById('historyLimitNote');
 
     function escapeHtml(value) {
         return String(value ?? '').replace(/[&<>'"]/g, function(ch) {
@@ -207,7 +209,7 @@ window.addEventListener('load', function() {
     function formatDateTime(value) {
         if (!value) return '';
         const parsed = new Date(String(value).replace(' ', 'T'));
-        if (Number.isNaN(parsed.getTime())) return escapeHtml(value);
+        if (Number.isNaN(parsed.getTime())) return String(value);
         return parsed.toLocaleString('vi-VN');
     }
 
@@ -220,6 +222,7 @@ window.addEventListener('load', function() {
         historyTableBody.innerHTML = '';
         historyItemTitle.textContent = '--';
         historyCurrentStock.textContent = '0';
+        historyLimitNote.textContent = '';
 
         try {
             const res = await fetch('/erp/api/warehouse_admin/get_item_history.php?item_id=' + encodeURIComponent(itemId));
@@ -233,6 +236,9 @@ window.addEventListener('load', function() {
 
             historyItemTitle.textContent = (data.item.item_code || '') + ' - ' + (data.item.item_name || '');
             historyCurrentStock.textContent = formatQty(data.item.stock) + ' ' + (data.item.unit || '');
+            if (Number(data.history_limit || 0) > 0) {
+                historyLimitNote.textContent = 'Hiển thị tối đa ' + Number(data.history_limit).toLocaleString('vi-VN') + ' giao dịch gần nhất.';
+            }
 
             const history = Array.isArray(data.history) ? data.history : [];
             if (history.length === 0) {
@@ -241,7 +247,7 @@ window.addEventListener('load', function() {
                 historyTableBody.innerHTML = history.map(function(row) {
                     const isImport = row.type === 'import';
                     return '<tr>'
-                        + '<td>' + formatDateTime(row.transacted_at) + '</td>'
+                        + '<td>' + escapeHtml(formatDateTime(row.transacted_at)) + '</td>'
                         + '<td><span class="badge bg-' + (isImport ? 'success' : 'warning text-dark') + '">' + (isImport ? 'Nhập' : 'Xuất') + '</span></td>'
                         + '<td class="text-end fw-semibold">' + formatQty(row.qty) + '</td>'
                         + '<td>' + escapeHtml(row.ref_no || '') + '</td>'
