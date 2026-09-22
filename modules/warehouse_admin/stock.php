@@ -35,7 +35,7 @@ $stocks = fetchAllSafe($pdo, "
         WHERE " . implode(' AND ', $where) . "
         GROUP BY i.id, i.item_code, i.item_name, i.unit, COALESCE(i.min_stock, 0), c.name
     ) s
-    " . ($lowStockOnly ? 'WHERE s.stock <= COALESCE(s.min_stock, 0)' : '') . "
+    " . ($lowStockOnly ? 'WHERE s.stock < 0 OR s.stock <= COALESCE(s.min_stock, 0)' : '') . "
     ORDER BY
         CASE
             WHEN s.stock <= 0 THEN 0
@@ -262,6 +262,8 @@ window.addEventListener('load', function() {
             historyCurrentStock.textContent = formatQty(data.item.stock) + ' ' + (data.item.unit || '');
             const limit = Number(data.history_limit || 0);
             const history = Array.isArray(data.history) ? data.history : [];
+            historyLoading.classList.add('d-none');
+            historyTableWrap.classList.remove('d-none');
             if (limit > 0 && history.length >= limit) {
                 historyLimitNote.textContent = 'Hiển thị tối đa ' + Number(data.history_limit).toLocaleString('vi-VN') + ' giao dịch gần nhất.';
             }
@@ -283,8 +285,6 @@ window.addEventListener('load', function() {
                 }).join('');
             }
 
-            historyLoading.classList.add('d-none');
-            historyTableWrap.classList.remove('d-none');
         } catch (err) {
             if (requestId !== latestRequestId) return;
             historyLoading.classList.add('d-none');
