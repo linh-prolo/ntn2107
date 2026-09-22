@@ -193,6 +193,7 @@ window.addEventListener('load', function() {
     const historyItemTitle = document.getElementById('historyItemTitle');
     const historyCurrentStock = document.getElementById('historyCurrentStock');
     const historyLimitNote = document.getElementById('historyLimitNote');
+    let latestRequestId = 0;
 
     function escapeHtml(value) {
         return String(value ?? '').replace(/[&<>'"]/g, function(ch) {
@@ -212,6 +213,7 @@ window.addEventListener('load', function() {
     }
 
     async function loadHistory(itemId) {
+        const requestId = ++latestRequestId;
         historyLoading.textContent = 'Đang tải dữ liệu...';
         historyLoading.classList.remove('d-none');
         historyError.classList.add('d-none');
@@ -234,6 +236,7 @@ window.addEventListener('load', function() {
                 throw new Error('Phản hồi từ máy chủ không hợp lệ. Vui lòng thử lại.');
             }
             const data = await res.json();
+            if (requestId !== latestRequestId) return;
             if (!res.ok) {
                 throw new Error(data.msg || ('Lỗi server (HTTP ' + res.status + ')'));
             }
@@ -241,7 +244,8 @@ window.addEventListener('load', function() {
                 throw new Error(data.msg || 'Không thể tải lịch sử vật tư');
             }
 
-            historyItemTitle.textContent = (data.item.item_code || '') + ' - ' + (data.item.item_name || '');
+            const itemTitleParts = [data.item.item_code, data.item.item_name].filter(function(v) { return !!v; });
+            historyItemTitle.textContent = itemTitleParts.length ? itemTitleParts.join(' - ') : 'Vật tư';
             historyCurrentStock.textContent = formatQty(data.item.stock) + ' ' + (data.item.unit || '');
             const limit = Number(data.history_limit || 0);
             const history = Array.isArray(data.history) ? data.history : [];
@@ -269,6 +273,7 @@ window.addEventListener('load', function() {
             historyLoading.classList.add('d-none');
             historyTableWrap.classList.remove('d-none');
         } catch (err) {
+            if (requestId !== latestRequestId) return;
             historyLoading.classList.add('d-none');
             historyError.textContent = err.message || 'Không thể tải lịch sử giao dịch';
             historyError.classList.remove('d-none');
