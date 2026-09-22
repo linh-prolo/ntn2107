@@ -1125,7 +1125,10 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                     </td>
                                     <td><?= e($log['deleted_name'] ?? '—') ?></td>
                                     <td><?= !empty($log['deleted_at']) ? e(date('d/m/Y H:i', strtotime((string)$log['deleted_at']))) : '—' ?></td>
-                                    <td><span class="text-danger fw-semibold"><?= nl2br(e((string)$log['delete_reason'])) ?></span></td>
+                                    <td>
+                                        <div class="fw-semibold">Lý do xoá</div>
+                                        <div class="text-danger"><?= nl2br(e((string)$log['delete_reason'])) ?></div>
+                                    </td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
