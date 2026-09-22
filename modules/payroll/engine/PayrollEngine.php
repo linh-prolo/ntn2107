@@ -19,7 +19,7 @@ class PayrollEngine
     const NIGHT_SHIFT_MULTIPLIER = 0.30; // 30% phụ trội đêm trên lương cơ bản thực nhận
 
 
-    const OT_MEAL_ALLOWANCE        = 14_000; // Trợ cấp ăn ca OT: 14.000đ/ngày
+    const OT_MEAL_ALLOWANCE        = 30_000; // Trợ cấp ăn ca OT: 30.000đ/ngày OT ≥3h, chỉ áp dụng ngày thường (không CN, không lễ)
 
     const OT_MEAL_MIN_HOURS        = 3.0;    // OT từ 3h/ngày mới được ăn ca
 
@@ -314,7 +314,7 @@ class PayrollEngine
 
 
 
-        // ── Trợ cấp ăn ca OT: cộng thêm 14.000đ/ngày OT ≥ 3h ───────
+        // ── Trợ cấp ăn ca OT: cộng thêm 30.000đ/ngày OT ≥ 3h ngày thường ───────
 
         $otMealDays    = $hasActivePeriod
             ? $this->getOTMealDays($userId, $employmentFrom, $employmentTo)
@@ -327,8 +327,6 @@ class PayrollEngine
         // ── Trợ cấp thực nhận ────────────────────────────────────────
 
         $mealReceived = 0; // Đã bỏ: công ty nấu cơm tập thể, không trả tiền ăn ca
-        $otMealBonus  = 0; // Đã bỏ ăn ca OT
-        $otMealDays   = 0;
 
         $clothesReceived   = round($clothesAllow   * $allowanceRatio);
 
@@ -437,6 +435,7 @@ class PayrollEngine
                      + $otherComponentsReceived
                      + $attendReceived
                      + $totalOtAmt
+                     + $otMealBonus
                      + $kpiBonus;
 
 
@@ -483,6 +482,8 @@ class PayrollEngine
 
         if ($nightShiftBonus > 0)
             $remarkParts[] = "Phụ trội đêm: +".number_format($nightShiftBonus)." đ (30% × ".number_format($nightHoursActual,1)."h × lương CB/giờ)";
+        if ($otMealBonus > 0)
+            $remarkParts[] = "Ăn ca OT: +".number_format($otMealBonus)." đ ($otMealDays ngày OT ≥3h, không tính CN/lễ)";
         if ($responsibilityReceived > 0)
             $remarkParts[] = "PC Trách nhiệm: +".number_format($responsibilityReceived)." đ";
         if ($seniorityReceived > 0)
