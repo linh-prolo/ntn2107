@@ -109,6 +109,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <?php foreach ($stocks as $s):
                     $stock = (float)$s['stock'];
                     $minStock = (float)$s['min_stock'];
+                    $historyAriaLabel = htmlspecialchars('Xem lịch sử vật tư ' . ($s['item_code'] ?? '') . ' - ' . ($s['item_name'] ?? ''), ENT_QUOTES, 'UTF-8');
                     $rowClass = '';
                     $statusBadge = 'success';
                     $statusText = 'Bình thường';
@@ -134,7 +135,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <td class="text-end"><?= e(number_format($minStock, 2, ',', '.')) ?></td>
                         <td><span class="badge bg-<?= $statusBadge ?>"><?= $statusText ?></span></td>
                         <td class="text-end">
-                            <button type="button" class="btn btn-sm btn-outline-primary btn-item-history" data-item-id="<?= (int)$s['id'] ?>" aria-label="Xem lịch sử vật tư <?= e($s['item_code'] . ' - ' . $s['item_name']) ?>">
+                            <button type="button" class="btn btn-sm btn-outline-primary btn-item-history" data-item-id="<?= (int)$s['id'] ?>" aria-label="<?= $historyAriaLabel ?>">
                                 <i class="fas fa-history me-1"></i>Lịch sử
                             </button>
                         </td>
