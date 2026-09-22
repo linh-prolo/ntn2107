@@ -35,11 +35,11 @@ $stocks = fetchAllSafe($pdo, "
         WHERE " . implode(' AND ', $where) . "
         GROUP BY i.id, i.item_code, i.item_name, i.unit, i.min_stock, c.name
     ) s
-    " . ($lowStockOnly ? 'WHERE s.stock <= s.min_stock' : '') . "
+    " . ($lowStockOnly ? 'WHERE s.stock <= COALESCE(s.min_stock, 0)' : '') . "
     ORDER BY
         CASE
             WHEN s.stock <= 0 THEN 0
-            WHEN s.stock <= s.min_stock THEN 1
+            WHEN s.stock <= COALESCE(s.min_stock, 0) THEN 1
             ELSE 2
         END ASC,
         s.stock ASC,

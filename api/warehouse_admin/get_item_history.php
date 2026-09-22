@@ -8,7 +8,7 @@ requireRoleApi('director', 'accountant', 'manager', 'warehouse');
 
 $itemId = (int)($_GET['item_id'] ?? 0);
 if ($itemId <= 0) {
-    echo json_encode(['ok' => false, 'msg' => 'Thiếu vật tư']);
+    echo json_encode(['ok' => false, 'msg' => 'Thiếu vật tư'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -24,7 +24,7 @@ $item = fetchOneSafe($pdo, "
 ", [$itemId]);
 
 if (!$item) {
-    echo json_encode(['ok' => false, 'msg' => 'Vật tư không tồn tại hoặc đã ngừng sử dụng']);
+    echo json_encode(['ok' => false, 'msg' => 'Vật tư không tồn tại hoặc đã ngừng sử dụng'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
