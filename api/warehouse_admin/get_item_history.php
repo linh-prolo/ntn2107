@@ -15,6 +15,7 @@ if ($itemId <= 0) {
 
 $pdo = getDBConnection();
 $historyLimit = 50;
+$historyLimitSql = (int)$historyLimit;
 
 $item = fetchOneSafe($pdo, "
     SELECT i.id, i.item_code, i.item_name, i.unit, i.min_stock
@@ -42,7 +43,7 @@ $history = fetchAllSafe($pdo, "
     LEFT JOIN users u ON u.id = t.transacted_by
     WHERE t.item_id = ?
     ORDER BY t.transacted_at DESC, t.id DESC
-    LIMIT {$historyLimit}
+    LIMIT " . $historyLimitSql . "
 ", [$itemId]);
 
 echo json_encode([

@@ -226,12 +226,15 @@ window.addEventListener('load', function() {
                 headers: { 'Accept': 'application/json' }
             });
             const contentType = res.headers.get('content-type') || '';
-            const data = contentType.includes('application/json') ? await res.json() : null;
-            if (!res.ok) {
-                throw new Error((data && data.msg) ? data.msg : ('Lỗi server (HTTP ' + res.status + ')'));
+            if (!contentType.includes('application/json')) {
+                if (res.status === 401 || res.status === 403 || res.redirected) {
+                    throw new Error('Phiên đăng nhập đã hết hạn hoặc bạn không có quyền truy cập. Vui lòng đăng nhập lại.');
+                }
+                throw new Error('Phản hồi từ máy chủ không hợp lệ. Vui lòng thử lại.');
             }
-            if (!data) {
-                throw new Error('Không thể đọc dữ liệu phản hồi từ máy chủ');
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.msg || ('Lỗi server (HTTP ' + res.status + ')'));
             }
             if (!data.ok) {
                 throw new Error(data.msg || 'Không thể tải lịch sử vật tư');
