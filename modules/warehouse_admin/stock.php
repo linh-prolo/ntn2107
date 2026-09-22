@@ -125,7 +125,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         $stockTextClass = 'text-danger';
                     }
                 ?>
-                    <tr class="stock-row <?= $rowClass ?>" data-item-id="<?= (int)$s['id'] ?>">
+                    <tr class="stock-row <?= $rowClass ?>" data-item-id="<?= (int)$s['id'] ?>" data-stock="<?= e((string)$stock) ?>">
                         <td class="fw-semibold"><?= e($s['item_code']) ?></td>
                         <td><?= e($s['item_name']) ?></td>
                         <td><?= e($s['category_name'] ?? '') ?></td>
@@ -134,7 +134,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <td class="text-end"><?= e(number_format($minStock, 2, ',', '.')) ?></td>
                         <td><span class="badge bg-<?= $statusBadge ?>"><?= $statusText ?></span></td>
                         <td class="text-end">
-                            <button type="button" class="btn btn-sm btn-outline-primary btn-item-history" data-item-id="<?= (int)$s['id'] ?>" aria-label="Xem lịch sử vật tư <?= e($s['item_code']) ?> - <?= e($s['item_name']) ?>">
+                            <button type="button" class="btn btn-sm btn-outline-primary btn-item-history" data-item-id="<?= (int)$s['id'] ?>" data-stock="<?= e((string)$stock) ?>" aria-label="Xem lịch sử vật tư mã #<?= (int)$s['id'] ?>">
                                 <i class="fas fa-history me-1"></i>Lịch sử
                             </button>
                         </td>
@@ -225,11 +225,20 @@ window.addEventListener('load', function() {
         historyLimitNote.textContent = '';
 
         try {
-            const res = await fetch('/erp/api/warehouse_admin/get_item_history.php?item_id=' + encodeURIComponent(itemId));
-            if (!res.ok) {
-                throw new Error('Lỗi server (HTTP ' + res.status + ')');
+            const stockHint = Number(historyCurrentStock.dataset.stockHint || '');
+            const query = new URLSearchParams({ item_id: String(itemId) });
+            if (Number.isFinite(stockHint)) {
+                query.set('stock_hint', String(stockHint));
             }
-            const data = await res.json();
+            const res = await fetch('/erp/api/warehouse_admin/get_item_history.php?' + query.toString());
+            const contentType = res.headers.get('content-type') || '';
+            const data = contentType.includes('application/json') ? await res.json() : null;
+            if (!res.ok) {
+                throw new Error((data && data.msg) ? data.msg : ('Lỗi server (HTTP ' + res.status + ')'));
+            }
+            if (!data) {
+                throw new Error('Không thể đọc dữ liệu phản hồi từ máy chủ');
+            }
             if (!data.ok) {
                 throw new Error(data.msg || 'Không thể tải lịch sử vật tư');
             }
@@ -269,7 +278,8 @@ window.addEventListener('load', function() {
         }
     }
 
-    function openHistory(itemId) {
+    function openHistory(itemId, stockHint) {
+        historyCurrentStock.dataset.stockHint = String(stockHint ?? '');
         modal.show();
         loadHistory(itemId);
     }
@@ -278,14 +288,14 @@ window.addEventListener('load', function() {
         btn.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
-            openHistory(this.dataset.itemId || '0');
+            openHistory(this.dataset.itemId || '0', this.dataset.stock || '');
         });
     });
 
     document.querySelectorAll('.stock-row').forEach(function(row) {
         row.addEventListener('click', function(e) {
             if (e.target.closest('.btn-item-history')) return;
-            openHistory(this.dataset.itemId || '0');
+            openHistory(this.dataset.itemId || '0', this.dataset.stock || '');
         });
     });
 });

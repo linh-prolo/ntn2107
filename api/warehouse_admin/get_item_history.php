@@ -7,6 +7,7 @@ requireLoginApi();
 requireRoleApi('director', 'accountant', 'manager', 'warehouse');
 
 $itemId = (int)($_GET['item_id'] ?? 0);
+$stockHintRaw = $_GET['stock_hint'] ?? null;
 if ($itemId <= 0) {
     http_response_code(400);
     echo json_encode(['ok' => false, 'msg' => 'Thiếu vật tư'], JSON_UNESCAPED_UNICODE);
@@ -17,12 +18,9 @@ $pdo = getDBConnection();
 $historyLimit = 100;
 
 $item = fetchOneSafe($pdo, "
-    SELECT i.id, i.item_code, i.item_name, i.unit, i.min_stock,
-           COALESCE(SUM(CASE WHEN t.type='import' THEN t.qty WHEN t.type='export' THEN -t.qty ELSE 0 END), 0) AS stock
+    SELECT i.id, i.item_code, i.item_name, i.unit, i.min_stock
     FROM wa_items i
-    LEFT JOIN wa_transactions t ON t.item_id = i.id
     WHERE i.id = ? AND i.is_active = 1
-    GROUP BY i.id, i.item_code, i.item_name, i.unit, i.min_stock
 ", [$itemId]);
 
 if (!$item) {
@@ -30,6 +28,16 @@ if (!$item) {
     echo json_encode(['ok' => false, 'msg' => 'Vật tư không tồn tại hoặc đã ngừng sử dụng'], JSON_UNESCAPED_UNICODE);
     exit;
 }
+
+$stock = is_numeric($stockHintRaw)
+    ? (float)$stockHintRaw
+    : (float)fetchScalarSafe(
+        $pdo,
+        "SELECT COALESCE(SUM(CASE WHEN type='import' THEN qty WHEN type='export' THEN -qty ELSE 0 END), 0) FROM wa_transactions WHERE item_id = ?",
+        [$itemId],
+        0
+    );
+$item['stock'] = $stock;
 
 $history = fetchAllSafe($pdo, "
     SELECT t.transacted_at, t.type, t.qty, t.ref_no, t.note, u.full_name
