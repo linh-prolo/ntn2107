@@ -35,7 +35,7 @@ $stocks = fetchAllSafe($pdo, "
         WHERE " . implode(' AND ', $where) . "
         GROUP BY i.id, i.item_code, i.item_name, i.unit, COALESCE(i.min_stock, 0), c.name
     ) s
-    " . ($lowStockOnly ? 'WHERE (s.stock <= 0) OR (s.stock > 0 AND s.stock <= COALESCE(s.min_stock, 0))' : '') . "
+    " . ($lowStockOnly ? 'WHERE (s.stock <= 0) OR (s.stock > 0 AND COALESCE(s.min_stock, 0) > 0 AND s.stock <= COALESCE(s.min_stock, 0))' : '') . "
     ORDER BY
         CASE
             WHEN s.stock <= 0 THEN 0
@@ -124,7 +124,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         $statusBadge = 'danger';
                         $statusText = 'Hết hàng';
                         $stockTextClass = 'text-danger';
-                    } elseif ($stock > 0 && $stock <= $minStock) {
+                    } elseif ($stock > 0 && $minStock > 0 && $stock <= $minStock) {
                         $rowClass = 'table-warning';
                         $statusBadge = 'warning text-dark';
                         $statusText = 'Sắp hết';
@@ -199,6 +199,7 @@ window.addEventListener('load', function() {
     const historyCurrentStock = document.getElementById('historyCurrentStock');
     const historyLimitNote = document.getElementById('historyLimitNote');
     let latestRequestId = 0;
+    let historyAbortController = null;
 
     function escapeHtml(value) {
         return String(value ?? '').replace(/[&<>'"]/g, function(ch) {
@@ -219,6 +220,10 @@ window.addEventListener('load', function() {
 
     async function loadHistory(itemId) {
         const requestId = ++latestRequestId;
+        if (historyAbortController) {
+            historyAbortController.abort();
+        }
+        historyAbortController = new AbortController();
         historyLoading.textContent = 'Đang tải dữ liệu...';
         historyLoading.classList.remove('d-none');
         historyError.classList.add('d-none');
@@ -231,7 +236,8 @@ window.addEventListener('load', function() {
 
         try {
             const res = await fetch('/erp/api/warehouse_admin/get_item_history.php?item_id=' + encodeURIComponent(itemId), {
-                headers: { 'Accept': 'application/json' }
+                headers: { 'Accept': 'application/json' },
+                signal: historyAbortController.signal
             });
             if (res.redirected) {
                 throw new Error('Phiên đăng nhập đã hết hạn hoặc bạn không có quyền truy cập. Vui lòng đăng nhập lại.');
@@ -293,6 +299,7 @@ window.addEventListener('load', function() {
             }
 
         } catch (err) {
+            if (err && err.name === 'AbortError') return;
             if (requestId !== latestRequestId) return;
             historyLoading.classList.add('d-none');
             historyError.textContent = err.message || 'Không thể tải lịch sử giao dịch';
