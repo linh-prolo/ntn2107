@@ -35,7 +35,7 @@ $stocks = fetchAllSafe($pdo, "
         WHERE " . implode(' AND ', $where) . "
         GROUP BY i.id, i.item_code, i.item_name, i.unit, COALESCE(i.min_stock, 0), c.name
     ) s
-    " . ($lowStockOnly ? 'WHERE s.stock <= COALESCE(s.min_stock, 0)' : '') . "
+    " . ($lowStockOnly ? 'WHERE s.stock <= 0 OR s.stock <= COALESCE(s.min_stock, 0)' : '') . "
     ORDER BY
         CASE
             WHEN s.stock <= 0 THEN 0
@@ -125,7 +125,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         $stockTextClass = 'text-danger';
                     }
                 ?>
-                    <tr class="stock-row <?= $rowClass ?>" data-item-id="<?= (int)$s['id'] ?>">
+                    <tr class="stock-row <?= $rowClass ?>" data-item-id="<?= (int)$s['id'] ?>" tabindex="0" role="button" aria-label="Mở lịch sử vật tư <?= e($s['item_code']) ?>">
                         <td class="fw-semibold"><?= e($s['item_code']) ?></td>
                         <td><?= e($s['item_name']) ?></td>
                         <td><?= e($s['category_name'] ?? '') ?></td>
@@ -290,6 +290,13 @@ window.addEventListener('load', function() {
         row.addEventListener('click', function(e) {
             if (e.target.closest('.btn-item-history')) return;
             openHistory(this.dataset.itemId || '0');
+        });
+        row.addEventListener('keydown', function(e) {
+            if (e.target.closest('.btn-item-history')) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openHistory(this.dataset.itemId || '0');
+            }
         });
     });
 });
