@@ -740,7 +740,9 @@ foreach ($employees as $emp) {
     $sheet3->setCellValue("{$otColLetter}{$employeeFirstRow}", round($monthOtHours, 2));
     $sheet3->mergeCells("{$signatureColLetter}{$employeeFirstRow}:{$signatureColLetter}{$employeeLastRow}");
 
-    // Không có trường lương/nhóm ngày lễ riêng trong dữ liệu chấm công để tính chính xác các mục này.
+    // Không có số dư phép, cờ hưởng lương hay nhóm lương ngày lễ/ca đêm trong dữ liệu export;
+    // phép năm được đếm theo đơn đã duyệt, còn các khoản không xác định được để 0.
+    // OT ban đêm chỉ có loại và tổng giờ, không đủ để tách riêng phần 200%.
     $monthlyStats = [
         $actualWorkDays,
         $annualLeaveDays,
