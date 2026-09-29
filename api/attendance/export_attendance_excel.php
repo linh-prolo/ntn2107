@@ -69,14 +69,14 @@ $leaveStmt = $pdo->prepare("
     SELECT user_id, start_date, end_date, leave_type
     FROM leave_requests
     WHERE status = 'approved'
-      AND ((MONTH(start_date)=? AND YEAR(start_date)=?)
-        OR (MONTH(end_date)=?   AND YEAR(end_date)=?))
+      AND start_date <= LAST_DAY(?)
+      AND end_date >= ?
 ");
-$leaveStmt->execute([$viewMonth, $viewYear, $viewMonth, $viewYear]);
+$leaveStmt->execute([$periodStart, $periodStart]);
 $leaveMap = [];
 foreach ($leaveStmt->fetchAll(PDO::FETCH_ASSOC) as $lv) {
-    $s = strtotime($lv['start_date']);
-    $e = strtotime($lv['end_date']);
+    $s = strtotime(max($lv['start_date'], $periodStart));
+    $e = strtotime(min($lv['end_date'], sprintf('%04d-%02d-%02d', $viewYear, $viewMonth, $daysInMon)));
     for ($d = $s; $d <= $e; $d += 86400) {
         $leaveMap[$lv['user_id']][date('Y-m-d', $d)] = $lv['leave_type'];
     }
@@ -91,8 +91,25 @@ $otStmt = $pdo->prepare("
 ");
 $otStmt->execute([$viewMonth, $viewYear]);
 $otMap = [];
+$otHoursMap = [];
+$otRowsMap = [];
+$otTypeHoursMap = [];
 foreach ($otStmt->fetchAll(PDO::FETCH_ASSOC) as $ot) {
     $otMap[$ot['user_id']][$ot['ot_date']] = $ot;
+    $hours = (float)($ot['hours'] ?? 0);
+    $otHoursMap[$ot['user_id']][$ot['ot_date']] = ($otHoursMap[$ot['user_id']][$ot['ot_date']] ?? 0) + $hours;
+    $otType = $ot['ot_type'] ?? 'weekday';
+    $otRow = [
+        'weekday' => 1,
+        'night_weekday' => 4,
+        'weekend' => 7,
+        'night_weekend' => 8,
+        'holiday' => 9,
+        'night_holiday' => 10,
+    ][$otType] ?? 1;
+    $otRowsMap[$ot['user_id']][$ot['ot_date']][$otRow] =
+        ($otRowsMap[$ot['user_id']][$ot['ot_date']][$otRow] ?? 0) + $hours;
+    $otTypeHoursMap[$ot['user_id']][$otType] = ($otTypeHoursMap[$ot['user_id']][$otType] ?? 0) + $hours;
 }
 
 // ── Ngày lễ ──────────────────────────────────────────────────────────────────
@@ -494,6 +511,277 @@ foreach ($colWidths2 as $col => $w) {
 }
 
 $sheet2->freezePane('E3');
+
+// ════════════════════════════════════════════════════════════════════════════════
+// SHEET 3: BẢNG CHẤM CÔNG NGANG
+// ════════════════════════════════════════════════════════════════════════════════
+$spreadsheet->createSheet();
+$sheet3 = $spreadsheet->getSheet(2);
+$sheet3->setTitle("Bảng chấm công T{$viewMonth}/{$viewYear}");
+$sheet3->getPageSetup()->setOrientation(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_LANDSCAPE);
+
+$summaryHeaders = [
+    'Ngày công thực làm (ngày)',
+    'Nghỉ phép tính lương (ngày)',
+    'Nghỉ không phép (ngày)',
+    'Ngày lễ',
+    'Nghỉ hưởng lương 100%',
+    'Nghỉ việc riêng hưởng lương',
+    'Làm việc ca đêm 150% (ngày)',
+    'Làm thêm ca đêm 100% cơ bản',
+    'Làm thêm ngày thường 200%',
+    'Làm thêm ban đêm ngày thường 200%',
+    'Làm thêm ban đêm cuối tuần 270%',
+    'Làm thêm ngày lễ 300%',
+    'Làm thêm ban đêm ngày lễ 390%',
+];
+$dayHeaders = ['T.Hai', 'T.Ba', 'T.Tư', 'T.Năm', 'T.Sáu', 'T.Bảy', 'Chủ nhật'];
+$firstDayCol = 5;
+$lastDayCol = $firstDayCol + $daysInMon - 1;
+$otCol = $lastDayCol + 1;
+$signatureCol = $otCol + 1;
+$summaryStartCol = $signatureCol + 1;
+$lastColS3 = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($summaryStartCol + count($summaryHeaders) - 1);
+
+$fixedHeaders = ['Họ và Tên', 'Ngày', 'Ca (loại)', 'Làm việc (giờ)'];
+foreach ($fixedHeaders as $index => $label) {
+    $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
+    $sheet3->mergeCells("{$col}1:{$col}2");
+    $sheet3->setCellValue("{$col}1", $label);
+}
+for ($d = 1; $d <= $daysInMon; $d++) {
+    $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($firstDayCol + $d - 1);
+    $dateStr = sprintf('%04d-%02d-%02d', $viewYear, $viewMonth, $d);
+    $dow = (int)date('N', strtotime($dateStr));
+    $sheet3->setCellValue("{$col}1", sprintf('%02d', $d));
+    $sheet3->setCellValue("{$col}2", $dayHeaders[$dow - 1]);
+}
+$otColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($otCol);
+$signatureColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($signatureCol);
+$sheet3->mergeCells("{$otColLetter}1:{$otColLetter}2");
+$sheet3->setCellValue("{$otColLetter}1", 'OT (Giờ)');
+$sheet3->mergeCells("{$signatureColLetter}1:{$signatureColLetter}2");
+$sheet3->setCellValue("{$signatureColLetter}1", 'Ký tên');
+foreach ($summaryHeaders as $index => $label) {
+    $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($summaryStartCol + $index);
+    $sheet3->mergeCells("{$col}1:{$col}2");
+    $sheet3->setCellValue("{$col}1", $label);
+}
+$sheet3->getStyle("A1:{$lastColS3}2")->applyFromArray($headerStyle);
+$sheet3->getRowDimension(1)->setRowHeight(34);
+$sheet3->getRowDimension(2)->setRowHeight(30);
+
+$attendanceRows = [
+    ['normal', 'Day', '100% (08:00-17:00)'],
+    ['normal', 'Day', '150% (17:00-22:00)'],
+    ['normal', 'Day', '210% (22:00-06:00)'],
+    ['normal', 'Night', '100% (20:00-22:00)'],
+    ['normal', 'Night', '130% (22:00-05:00)'],
+    ['normal', 'Night', '210% (05:00-06:00)'],
+    ['normal', 'Night', '150% (06:00-08:00)'],
+    ['sunday', 'Day', '200% (06:00-22:00)'],
+    ['sunday', 'Night', '270% (22:00-06:00)'],
+    ['holiday', 'Day', '300% (08:00-22:00)'],
+    ['holiday', 'Night', '390% (22:00-08:00)'],
+    ['leave', '', 'Nghỉ (Lý do)'],
+];
+$row3 = 3;
+$allocateAttendanceHours = static function ($att, $dateStr, $dayType) use ($attendanceRows) {
+    $hoursByRow = array_fill(0, count($attendanceRows), 0.0);
+    $checkIn = $att['check_in'] ?? null;
+    $checkOut = $att['check_out'] ?? null;
+    $reportedHours = max(0, (float)($att['work_hours'] ?? 0));
+    $start = $checkIn ? strtotime($checkIn) : false;
+    $end = $checkOut ? strtotime($checkOut) : false;
+    $isNightShift = $start !== false && ((int)date('G', $start) >= 17 || (int)date('G', $start) < 6);
+
+    if ($start === false || $end === false) {
+        $defaultRow = $dayType === 'holiday' ? ($isNightShift ? 10 : 9)
+            : ($dayType === 'sunday' ? ($isNightShift ? 8 : 7) : ($isNightShift ? 3 : 0));
+        $hoursByRow[$defaultRow] = $reportedHours;
+        return $hoursByRow;
+    }
+    if ($end <= $start) $end += 86400;
+
+    if ($dayType === 'holiday') {
+        $windows = [[9, '08:00', '22:00'], [10, '22:00', '08:00']];
+    } elseif ($dayType === 'sunday') {
+        $windows = [[7, '06:00', '22:00'], [8, '22:00', '06:00']];
+    } elseif ($isNightShift) {
+        $windows = [[3, '20:00', '22:00'], [4, '22:00', '05:00'], [5, '05:00', '06:00'], [6, '06:00', '08:00']];
+    } else {
+        $windows = [[0, '08:00', '17:00'], [1, '17:00', '22:00'], [2, '22:00', '06:00']];
+    }
+
+    foreach ($windows as [$rowIndex, $windowStart, $windowEnd]) {
+        $windowFrom = strtotime($dateStr . ' ' . $windowStart);
+        $windowTo = strtotime($dateStr . ' ' . $windowEnd);
+        if ($windowTo <= $windowFrom) $windowTo += 86400;
+        foreach ([$windowFrom - 86400, $windowFrom, $windowFrom + 86400] as $candidateFrom) {
+            $candidateTo = $candidateFrom + ($windowTo - $windowFrom);
+            $overlap = max(0, min($end, $candidateTo) - max($start, $candidateFrom));
+            $hoursByRow[$rowIndex] += $overlap / 3600;
+        }
+    }
+    $allocated = array_sum($hoursByRow);
+    if ($allocated > 0) {
+        if ($reportedHours <= 0) {
+            $hoursByRow = array_fill(0, count($attendanceRows), 0.0);
+        } else {
+            $factor = min(1, $reportedHours / $allocated);
+            foreach ($hoursByRow as &$hours) $hours *= $factor;
+            unset($hours);
+        }
+        if ($reportedHours > $allocated) {
+            $defaultRow = $dayType === 'holiday' ? ($isNightShift ? 10 : 9)
+                : ($dayType === 'sunday' ? ($isNightShift ? 8 : 7) : ($isNightShift ? 3 : 0));
+            $hoursByRow[$defaultRow] += $reportedHours - $allocated;
+        }
+    } elseif ($reportedHours > 0) {
+        $defaultRow = $dayType === 'holiday' ? ($isNightShift ? 10 : 9)
+            : ($dayType === 'sunday' ? ($isNightShift ? 8 : 7) : ($isNightShift ? 3 : 0));
+        $hoursByRow[$defaultRow] = $reportedHours;
+    }
+    return $hoursByRow;
+};
+
+foreach ($employees as $emp) {
+    $employeeFirstRow = $row3;
+    $dayValues = [];
+    $actualWorkDays = 0;
+    $annualLeaveDays = 0;
+    $unpaidLeaveDays = 0;
+    $monthOtHours = 0.0;
+    $otTotalsByType = ['weekday' => 0.0, 'night_weekday' => 0.0, 'weekend' => 0.0, 'night_weekend' => 0.0, 'holiday' => 0.0, 'night_holiday' => 0.0];
+
+    for ($d = 1; $d <= $daysInMon; $d++) {
+        $dateStr = sprintf('%04d-%02d-%02d', $viewYear, $viewMonth, $d);
+        $att = $attMap[$emp['id']][$dateStr] ?? null;
+        $leave = $leaveMap[$emp['id']][$dateStr] ?? null;
+        $isHoliday = in_array($dateStr, $holidayDates, true);
+        $isSunday = (int)date('N', strtotime($dateStr)) === 7;
+        $dayType = $isHoliday ? 'holiday' : ($isSunday ? 'sunday' : 'normal');
+        $values = array_fill(0, count($attendanceRows), 0.0);
+
+        if ($att && !empty($att['check_in'])) {
+            $actualWorkDays++;
+            $values = $allocateAttendanceHours($att, $dateStr, $dayType);
+        } elseif ($leave !== null) {
+            $values[11] = [
+                'annual' => 'Phép năm',
+                'sick' => 'Ốm',
+                'unpaid' => 'Không lương',
+                'other' => 'Việc riêng',
+            ][$leave] ?? (string)$leave;
+            if ($leave === 'annual') $annualLeaveDays++;
+            if ($leave === 'unpaid') $unpaidLeaveDays++;
+        }
+
+        foreach ($otRowsMap[$emp['id']][$dateStr] ?? [] as $otRow => $hours) {
+            $values[$otRow] = (float)$values[$otRow] + (float)$hours;
+        }
+        $dayValues[$d] = $values;
+        $monthOtHours += (float)($otHoursMap[$emp['id']][$dateStr] ?? 0);
+    }
+    foreach ($otTypeHoursMap[$emp['id']] ?? [] as $type => $hours) {
+        if (array_key_exists($type, $otTotalsByType)) $otTotalsByType[$type] = (float)$hours;
+    }
+
+    for ($subRow = 0; $subRow < count($attendanceRows); $subRow++) {
+        $row = $employeeFirstRow + $subRow;
+        $sheet3->setCellValue("D{$row}", $attendanceRows[$subRow][2]);
+        foreach ($dayValues as $day => $values) {
+            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($firstDayCol + $day - 1);
+            $value = $values[$subRow];
+            $sheet3->setCellValue("{$col}{$row}", is_numeric($value) ? (round((float)$value, 2) ?: '') : $value);
+        }
+        $fill = ($subRow % 2 === 0) ? 'ffffff' : 'f8f9fa';
+        $sheet3->getStyle("A{$row}:{$lastColS3}{$row}")->applyFromArray([
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $fill]],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'dee2e6']]],
+            'font' => ['size' => 9],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'vertical' => Alignment::VERTICAL_CENTER,
+                'wrapText' => true,
+            ],
+        ]);
+        for ($d = 1; $d <= $daysInMon; $d++) {
+            $dateStr = sprintf('%04d-%02d-%02d', $viewYear, $viewMonth, $d);
+            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($firstDayCol + $d - 1);
+            if (in_array($dateStr, $holidayDates, true)) {
+                $sheet3->getStyle("{$col}{$row}")->getFill()->getStartColor()->setRGB('fef3c7');
+            } elseif ((int)date('N', strtotime($dateStr)) === 7) {
+                $sheet3->getStyle("{$col}{$row}")->getFill()->getStartColor()->setRGB('f3e8ff');
+            }
+        }
+        $sheet3->getRowDimension($row)->setRowHeight(19);
+    }
+
+    $employeeLastRow = $employeeFirstRow + count($attendanceRows) - 1;
+    $sheet3->setCellValue("A{$employeeFirstRow}", $emp['full_name'] ?? '');
+    $sheet3->mergeCells("A{$employeeFirstRow}:A{$employeeLastRow}");
+    $sheet3->mergeCells("B{$employeeFirstRow}:B" . ($employeeFirstRow + 6));
+    $sheet3->setCellValue("B{$employeeFirstRow}", 'Normal (Bình thường)');
+    $sheet3->mergeCells("B" . ($employeeFirstRow + 7) . ":B" . ($employeeFirstRow + 8));
+    $sheet3->setCellValue("B" . ($employeeFirstRow + 7), 'Sun (Chủ nhật)');
+    $sheet3->mergeCells("B" . ($employeeFirstRow + 9) . ":B" . ($employeeFirstRow + 10));
+    $sheet3->setCellValue("B" . ($employeeFirstRow + 9), 'Holiday (Lễ)');
+    $sheet3->setCellValue("B" . ($employeeFirstRow + 11), 'Nghỉ (Lý do)');
+    $sheet3->mergeCells("C{$employeeFirstRow}:C" . ($employeeFirstRow + 2));
+    $sheet3->setCellValue("C{$employeeFirstRow}", 'Day');
+    $sheet3->mergeCells("C" . ($employeeFirstRow + 3) . ":C" . ($employeeFirstRow + 6));
+    $sheet3->setCellValue("C" . ($employeeFirstRow + 3), 'Night');
+    $sheet3->setCellValue("C" . ($employeeFirstRow + 7), 'Day');
+    $sheet3->setCellValue("C" . ($employeeFirstRow + 8), 'Night');
+    $sheet3->setCellValue("C" . ($employeeFirstRow + 9), 'Day');
+    $sheet3->setCellValue("C" . ($employeeFirstRow + 10), 'Night');
+    $sheet3->mergeCells("{$otColLetter}{$employeeFirstRow}:{$otColLetter}{$employeeLastRow}");
+    $sheet3->setCellValue("{$otColLetter}{$employeeFirstRow}", round($monthOtHours, 2));
+    $sheet3->mergeCells("{$signatureColLetter}{$employeeFirstRow}:{$signatureColLetter}{$employeeLastRow}");
+
+    // Không có số dư phép, cờ hưởng lương hay nhóm lương ngày lễ/ca đêm trong dữ liệu export;
+    // phép năm được đếm theo đơn đã duyệt, còn các khoản không xác định được để 0.
+    // OT ban đêm chỉ có loại và tổng giờ, không đủ để tách riêng phần 200%.
+    $monthlyStats = [
+        $actualWorkDays,
+        $annualLeaveDays,
+        $unpaidLeaveDays,
+        0,
+        0,
+        0,
+        0,
+        $otTotalsByType['night_weekday'],
+        $otTotalsByType['weekday'],
+        0,
+        $otTotalsByType['night_weekend'],
+        $otTotalsByType['holiday'],
+        $otTotalsByType['night_holiday'],
+    ];
+    foreach ($monthlyStats as $index => $value) {
+        $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($summaryStartCol + $index);
+        $sheet3->setCellValue("{$col}{$employeeFirstRow}", round((float)$value, 2));
+        $sheet3->mergeCells("{$col}{$employeeFirstRow}:{$col}{$employeeLastRow}");
+    }
+    $row3 = $employeeLastRow + 1;
+}
+
+$fixedWidthsS3 = [1 => 24, 2 => 19, 3 => 9, 4 => 25];
+foreach ($fixedWidthsS3 as $index => $width) {
+    $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index);
+    $sheet3->getColumnDimension($col)->setWidth($width);
+}
+for ($colIndex = $firstDayCol; $colIndex <= $lastDayCol; $colIndex++) {
+    $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex);
+    $sheet3->getColumnDimension($col)->setWidth(6);
+}
+$sheet3->getColumnDimension($otColLetter)->setWidth(10);
+$sheet3->getColumnDimension($signatureColLetter)->setWidth(12);
+foreach ($summaryHeaders as $index => $_) {
+    $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($summaryStartCol + $index);
+    $sheet3->getColumnDimension($col)->setWidth(13);
+}
+$sheet3->freezePane(\PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($firstDayCol) . '3');
 
 // ════════════════════════════════════════════════════════════════════════════════
 // XUẤT FILE
