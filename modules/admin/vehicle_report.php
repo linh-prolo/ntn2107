@@ -45,7 +45,8 @@ $rows = fetchAllSafe(
 
 $fuelByVehicle = [];
 $maintenanceByVehicle = [];
-$tripStatsByVehicle = [];
+$odometerByVehicle = [];
+$tollByVehicle = [];
 
 if ($rows) {
     $vehicleIds = array_map(static fn(array $row): int => (int)$row['id'], $rows);
@@ -80,47 +81,48 @@ if ($rows) {
         $maintenanceByVehicle[(int)$maintenanceRow['vehicle_id']] = $maintenanceRow;
     }
 
-    // Lấy toàn bộ chuyến đi trong tháng để xác định km đầu tháng, km cuối tháng
-    // (cập nhật đến ngày phát sinh cuối cùng trong tháng) và tổng phí cầu đường.
-    $tripRows = fetchAllSafe(
+    $odometerRows = fetchAllSafe(
         $pdo,
-        "SELECT
-            vehicle_id,
-            trip_date,
-            km_start,
-            km_end,
-            toll_fee
-        FROM vehicle_trips
-        WHERE vehicle_id IN ($placeholders) AND trip_date BETWEEN ? AND ?
-        ORDER BY vehicle_id ASC, trip_date ASC, id ASC",
-        array_merge($vehicleIds, [$monthStart, $monthEnd])
+        "SELECT vehicle_id, reading_date, odometer
+        FROM (
+            SELECT vehicle_id, fuel_date AS reading_date, odometer, id AS record_id, 0 AS source_order
+            FROM vehicle_fuel
+            WHERE vehicle_id IN ($placeholders) AND fuel_date BETWEEN ? AND ? AND odometer IS NOT NULL
+            UNION ALL
+            SELECT vehicle_id, maintenance_date AS reading_date, odometer, id AS record_id, 1 AS source_order
+            FROM vehicle_maintenance
+            WHERE vehicle_id IN ($placeholders) AND maintenance_date BETWEEN ? AND ? AND odometer IS NOT NULL
+        ) AS readings
+        ORDER BY vehicle_id ASC, reading_date ASC, record_id ASC, source_order ASC",
+        array_merge($vehicleIds, [$monthStart, $monthEnd], $vehicleIds, [$monthStart, $monthEnd])
     );
 
-    foreach ($tripRows as $tripRow) {
-        $vehicleId = (int)$tripRow['vehicle_id'];
-        if (!isset($tripStatsByVehicle[$vehicleId])) {
-            $tripStatsByVehicle[$vehicleId] = [
-                'km_start_month' => null,
-                'km_end_month' => null,
-                'last_trip_date' => null,
-                'total_toll_fee' => 0.0,
+    foreach ($odometerRows as $odometerRow) {
+        $vehicleId = (int)$odometerRow['vehicle_id'];
+        $odometer = (float)$odometerRow['odometer'];
+        if (!isset($odometerByVehicle[$vehicleId])) {
+            $odometerByVehicle[$vehicleId] = [
+                'km_start_month' => $odometer,
             ];
         }
+        $odometerByVehicle[$vehicleId]['km_end_month'] = $odometer;
+        $odometerByVehicle[$vehicleId]['last_reading_date'] = $odometerRow['reading_date'];
+    }
 
-        if ($tripRow['km_start'] !== null && $tripStatsByVehicle[$vehicleId]['km_start_month'] === null) {
-            $tripStatsByVehicle[$vehicleId]['km_start_month'] = (float)$tripRow['km_start'];
-        }
-        if ($tripRow['km_end'] !== null) {
-            $tripStatsByVehicle[$vehicleId]['km_end_month'] = (float)$tripRow['km_end'];
-            $tripStatsByVehicle[$vehicleId]['last_trip_date'] = $tripRow['trip_date'];
-        }
-        $tripStatsByVehicle[$vehicleId]['total_toll_fee'] += (float)($tripRow['toll_fee'] ?? 0);
+    $tollRows = fetchAllSafe(
+        $pdo,
+        "SELECT vehicle_id, SUM(COALESCE(toll_fee, 0)) AS total_toll_fee
+        FROM vehicle_trips
+        WHERE vehicle_id IN ($placeholders) AND trip_date BETWEEN ? AND ?
+        GROUP BY vehicle_id",
+        array_merge($vehicleIds, [$monthStart, $monthEnd])
+    );
+    foreach ($tollRows as $tollRow) {
+        $tollByVehicle[(int)$tollRow['vehicle_id']] = $tollRow;
     }
 }
 
 $reportRows = [];
-$totalKmStart = 0.0;
-$totalKmEnd = 0.0;
 $totalKm = 0.0;
 $totalFuelCost = 0.0;
 $totalMaintenanceCost = 0.0;
@@ -132,16 +134,17 @@ foreach ($rows as $row) {
     $vehicleId = (int)$row['id'];
     $fuelData = $fuelByVehicle[$vehicleId] ?? null;
     $maintenanceData = $maintenanceByVehicle[$vehicleId] ?? null;
-    $tripData = $tripStatsByVehicle[$vehicleId] ?? null;
+    $odometerData = $odometerByVehicle[$vehicleId] ?? null;
+    $tollData = $tollByVehicle[$vehicleId] ?? null;
 
     $liters = (float)($fuelData['total_liters'] ?? 0);
     $fuelCost = (float)($fuelData['total_fuel_amount'] ?? 0);
     $maintenanceCost = (float)($maintenanceData['total_maintenance_amount'] ?? 0);
-    $tollFee = (float)($tripData['total_toll_fee'] ?? 0);
+    $tollFee = (float)($tollData['total_toll_fee'] ?? 0);
 
-    $kmStartMonth = $tripData['km_start_month'] ?? null;
-    $kmEndMonth = $tripData['km_end_month'] ?? null;
-    $lastTripDate = $tripData['last_trip_date'] ?? null;
+    $kmStartMonth = $odometerData['km_start_month'] ?? null;
+    $kmEndMonth = $odometerData['km_end_month'] ?? null;
+    $lastReadingDate = $odometerData['last_reading_date'] ?? null;
 
     $km = ($kmStartMonth !== null && $kmEndMonth !== null && $kmEndMonth >= $kmStartMonth)
         ? ($kmEndMonth - $kmStartMonth)
@@ -155,7 +158,7 @@ foreach ($rows as $row) {
         'status' => $row['status'],
         'km_start_month' => $kmStartMonth,
         'km_end_month' => $kmEndMonth,
-        'last_trip_date' => $lastTripDate,
+        'last_reading_date' => $lastReadingDate,
         'total_km' => $km,
         'total_liters' => $liters,
         'avg_consumption' => $km > 0 ? ($liters / $km) * 100 : null,
@@ -164,19 +167,13 @@ foreach ($rows as $row) {
         'total_cost' => $totalVehicleCost,
     ];
 
-    if ($kmStartMonth !== null) {
-        $totalKmStart += $kmStartMonth;
-    }
-    if ($kmEndMonth !== null) {
-        $totalKmEnd += $kmEndMonth;
-    }
     $totalKm += $km;
     $totalLiters += $liters;
     $totalFuelCost += $fuelCost;
     $totalMaintenanceCost += $maintenanceCost;
     $totalCost += $totalVehicleCost;
 
-    if ($liters > 0 || $km > 0 || $totalVehicleCost > 0) {
+    if ($kmStartMonth !== null || $liters > 0 || $totalVehicleCost > 0) {
         $hasMonthlyActivity = true;
     }
 }
@@ -253,11 +250,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
         <div class="card border-0 shadow-sm">
             <div class="card-body border-bottom">
                 <div class="fw-semibold">Danh sách chi phí theo xe</div>
-                <div class="text-muted small">Hiển thị toàn bộ xe để đối chiếu tổng quan, kể cả xe không có phát sinh trong tháng. Số km cuối tháng được cập nhật đến ngày phát sinh chuyến đi cuối cùng trong tháng.</div>
+                <div class="text-muted small">Hiển thị toàn bộ xe để đối chiếu tổng quan, kể cả xe không có phát sinh trong tháng. Số km cuối tháng được cập nhật đến ngày ghi nhận công tơ mét cuối cùng trong tháng.</div>
             </div>
             <?php if ($reportRows && !$hasMonthlyActivity): ?>
                 <div class="alert alert-info rounded-0 border-0 border-bottom mb-0">
-                    Không có phát sinh chi phí, đổ dầu hoặc chuyến đi nào trong tháng đã chọn. Bảng dưới vẫn hiển thị toàn bộ xe để đối chiếu.
+                    Không có phát sinh chi phí, đổ dầu hoặc ghi nhận công tơ mét nào trong tháng đã chọn. Bảng dưới vẫn hiển thị toàn bộ xe để đối chiếu.
                 </div>
             <?php endif; ?>
             <div class="table-responsive">
@@ -291,8 +288,8 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <td class="text-end"><?= $reportRow['km_start_month'] !== null ? e(number_format($reportRow['km_start_month'], 0, ',', '.')) : '—' ?></td>
                                 <td class="text-end">
                                     <?= $reportRow['km_end_month'] !== null ? e(number_format($reportRow['km_end_month'], 0, ',', '.')) : '—' ?>
-                                    <?php if ($reportRow['last_trip_date']): ?>
-                                        <div class="text-muted small">Đến <?= e(date('d/m/Y', strtotime($reportRow['last_trip_date']))) ?></div>
+                                    <?php if ($reportRow['last_reading_date']): ?>
+                                        <div class="text-muted small">Đến <?= e(date('d/m/Y', strtotime($reportRow['last_reading_date']))) ?></div>
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-end"><?= e(number_format($reportRow['total_km'], 0, ',', '.')) ?></td>
