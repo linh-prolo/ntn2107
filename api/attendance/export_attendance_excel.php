@@ -205,7 +205,7 @@ $headerStyle = [
 // SHEET 1: TỔNG HỢP
 // ════════════════════════════════════════════════════════════════════════════════
 $sheet1 = $spreadsheet->getActiveSheet();
-$sheet1->setTitle("Tổng hợp T{$viewMonth}/{$viewYear}");
+$sheet1->setTitle("Tổng hợp T{$viewMonth}-{$viewYear}");
 
 $lastColS1 = 'T';
 
@@ -393,7 +393,7 @@ $sheet1->freezePane('F3');
 // ════════════════════════════════════════════════════════════════════════════════
 $spreadsheet->createSheet();
 $sheet2 = $spreadsheet->getSheet(1);
-$sheet2->setTitle("Chi tiết T{$viewMonth}/{$viewYear}");
+$sheet2->setTitle("Chi tiết T{$viewMonth}-{$viewYear}");
 
 $lastColS2 = 'O';
 
@@ -517,7 +517,7 @@ $sheet2->freezePane('E3');
 // ════════════════════════════════════════════════════════════════════════════════
 $spreadsheet->createSheet();
 $sheet3 = $spreadsheet->getSheet(2);
-$sheet3->setTitle("Bảng chấm công T{$viewMonth}/{$viewYear}");
+$sheet3->setTitle("Bảng chấm công T{$viewMonth}-{$viewYear}");
 $sheet3->getPageSetup()->setOrientation(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_LANDSCAPE);
 
 $summaryHeaders = [
