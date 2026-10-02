@@ -33,8 +33,9 @@ class ApiResponse {
 
 /// HTTP client cho /erp/api/mobile/* – tự gắn token, xử lý lỗi & timeout.
 class ApiService {
-  ApiService({http.Client? client, this._baseUrl})
-    : _client = client ?? http.Client();
+  ApiService({http.Client? client, String? baseUrl})
+    : _client = client ?? http.Client(),
+      _baseUrl = baseUrl;
 
   final http.Client _client;
   final String? _baseUrl;

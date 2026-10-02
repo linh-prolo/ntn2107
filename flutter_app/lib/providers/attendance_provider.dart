@@ -19,8 +19,12 @@ class AttendanceProvider extends SafeChangeNotifier {
   bool _loading = false;
   bool _submitting = false;
   String? _error;
+  Duration _clockOffset = Duration.zero;
 
   AttendanceStatus? get status => _status;
+
+  /// Giờ hiện tại theo đồng hồ máy chủ (Asia/Ho_Chi_Minh), bù lệch giờ thiết bị.
+  DateTime now() => DateTime.now().add(_clockOffset);
   int get month => _month;
   int get year => _year;
   bool get isLoading => _loading;
@@ -43,12 +47,20 @@ class AttendanceProvider extends SafeChangeNotifier {
         ApiConfig.attendance,
         query: {'month': '$_month', 'year': '$_year'},
       );
-      _status = AttendanceStatus.fromJson(res.map);
+      _setStatus(AttendanceStatus.fromJson(res.map));
     } on ApiException catch (e) {
       _error = e.message;
     } finally {
       _loading = false;
       notifyListeners();
+    }
+  }
+
+  void _setStatus(AttendanceStatus status) {
+    _status = status;
+    final serverTime = status.serverTime;
+    if (serverTime != null) {
+      _clockOffset = serverTime.difference(DateTime.now());
     }
   }
 
@@ -85,7 +97,7 @@ class AttendanceProvider extends SafeChangeNotifier {
         },
       );
       if (res.data is Map) {
-        _status = AttendanceStatus.fromJson(res.map);
+        _setStatus(AttendanceStatus.fromJson(res.map));
       }
       return res.message ??
           (checkIn ? 'Chấm công vào thành công!' : 'Chấm công ra thành công!');

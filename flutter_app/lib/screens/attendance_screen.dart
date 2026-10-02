@@ -40,7 +40,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   void initState() {
     super.initState();
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _now = DateTime.now());
+      if (mounted) {
+        setState(() => _now = context.read<AttendanceProvider>().now());
+      }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<AttendanceProvider>().load();
@@ -156,9 +158,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               child: Image.memory(photo, height: 220, fit: BoxFit.cover),
             ),
             const SizedBox(height: 12),
-            Text(
-              'Thời gian: ${Fmt.time(DateTime.now())} – ${Fmt.date(DateTime.now())}',
-            ),
+            Text('Thời gian: ${Fmt.time(_now)} – ${Fmt.date(_now)}'),
           ],
         ),
         actions: [
