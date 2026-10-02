@@ -4,6 +4,12 @@ Hệ thống ERP nội bộ quản lý kho, sản xuất, nhân sự, lương, h
 
 ---
 
+## Ứng dụng nhân viên (Flutter)
+
+Mã nguồn app ở `flutter_app/` (chấm công, OT, nghỉ phép, lương, thông báo), gọi API JSON `api/mobile/*` (xác thực bằng token). Xem hướng dẫn chạy thử trên web và cấu hình backend tại [`flutter_app/README.md`](flutter_app/README.md).
+
+---
+
 ## Kiến trúc sau refactor
 
 ```
