@@ -55,6 +55,15 @@ if ($viewId) {
     header('Location: /erp/modules/payroll/my_payroll.php?id=' . $slips[0]['id']); exit;
 }
 
+$profileLumpSum = false;
+if ((!empty($slips) && !array_key_exists('is_lump_sum', $slips[0]))
+    || ($slipDetail && !array_key_exists('is_lump_sum', $slipDetail))) {
+    $profileStmt = $pdo->prepare("SELECT * FROM employee_profiles WHERE user_id = ?");
+    $profileStmt->execute([$user['id']]);
+    $employeeProfile = $profileStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $profileLumpSum = !empty($employeeProfile['is_lump_sum']);
+}
+
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/header.php';
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 ?>
@@ -104,6 +113,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <div>
                                 <div class="fw-semibold small">
                                     Tháng <?= $s['period_month'] ?>/<?= $s['period_year'] ?>
+                                    <?php if (array_key_exists('is_lump_sum', $s) ? !empty($s['is_lump_sum']) : $profileLumpSum): ?>
+                                    <span class="badge bg-info text-dark ms-1">Khoán</span>
+                                    <?php endif; ?>
                                 </div>
                                 <div style="font-size:11px"
                                      class="<?= ($slipDetail && $s['id'] == $slipDetail['id']) ? 'text-white opacity-75' : 'text-muted' ?>">
@@ -131,6 +143,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <div class="card-body border-bottom text-center pb-3">
                     <div class="fw-bold fs-5 text-uppercase">PHIẾU THANH TOÁN LƯƠNG</div>
                     <div class="small text-muted">PAYROLL SLIP</div>
+                    <?php if (array_key_exists('is_lump_sum', $slipDetail) ? !empty($slipDetail['is_lump_sum']) : $profileLumpSum): ?>
+                    <span class="badge bg-info text-dark mt-1">Khoán</span>
+                    <?php endif; ?>
                     <div class="small mt-1">
                         Tháng <?= $slipDetail['period_month'] ?>/<?= $slipDetail['period_year'] ?>
                         (<?= date('d/m/Y', strtotime($slipDetail['period_from'])) ?>
@@ -158,10 +173,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     </div>
                     <table class="table table-sm table-bordered mb-4">
                         <tr class="table-dark">
-                            <td class="fw-bold">Lương Tổng / Gross salary (=1+3+4+5+5b+5c+5d+5e+6+7)</td>
+                            <td class="fw-bold">Lương Tổng / Gross salary (=1<?= (float)($slipDetail['meal_received'] ?? 0) > 0 ? '+2' : '' ?>+3+4+5+5b+5c+5d+5e+6+7)</td>
                             <td class="text-end fw-bold">
                                 <?= number_format(
                                     $slipDetail['basic_salary'] +
+                                    ((float)($slipDetail['meal_received'] ?? 0) > 0 ? (float)($slipDetail['meal_allowance'] ?? 0) : 0) +
                                     $slipDetail['clothes_allowance'] +
                                     $slipDetail['phone_allowance'] +
                                     $slipDetail['transport_allowance'] +
@@ -187,6 +203,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 							['(5e) Trợ cấp ăn ca OT / OT meal allowance',           'ot_meal_bonus'],
 							['(6) Thưởng hiệu quả / Job effectiveness bonus',      'performance_bonus'],
                         ];
+                        if ((float)($slipDetail['meal_received'] ?? 0) > 0) {
+                            array_splice($items, 1, 0, [
+                                ['(2) Trợ cấp ăn ca hợp đồng / Contract meal allowance', 'meal_allowance'],
+                            ]);
+                        }
                         foreach ($items as [$label, $key]):
 							if (in_array($key, ['responsibility_allowance', 'seniority_allowance', 'ot_meal_bonus'], true)
 							    && (float)($slipDetail[$key] ?? 0) <= 0) {
@@ -261,6 +282,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             ['(19e) Trợ cấp ăn ca OT / OT meal allowance',             'ot_meal_bonus'],
                             ['(20) Thưởng hiệu quả thực nhận / Performance received', 'performance_bonus'],
                         ];
+                        if ((float)($slipDetail['meal_received'] ?? 0) > 0) {
+                            array_splice($items2, 1, 0, [
+                                ['(15c) Trợ cấp ăn ca thực nhận / Meal allowance received', 'meal_received'],
+                            ]);
+                        }
                         foreach ($items2 as [$label, $key]):
                            if (in_array($key, ['responsibility_allowance_received', 'seniority_allowance_received', 'ot_meal_bonus'], true)
                               && (float)($slipDetail[$key] ?? 0) <= 0) {
