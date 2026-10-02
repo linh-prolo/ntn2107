@@ -173,10 +173,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     </div>
                     <table class="table table-sm table-bordered mb-4">
                         <tr class="table-dark">
-                            <td class="fw-bold">Lương Tổng / Gross salary (=1+3+4+5+5b+5c+5d+5e+6+7)</td>
+                            <td class="fw-bold">Lương Tổng / Gross salary (=1<?= (float)($slipDetail['meal_received'] ?? 0) > 0 ? '+2' : '' ?>+3+4+5+5b+5c+5d+5e+6+7)</td>
                             <td class="text-end fw-bold">
                                 <?= number_format(
                                     $slipDetail['basic_salary'] +
+                                    ((float)($slipDetail['meal_received'] ?? 0) > 0 ? (float)($slipDetail['meal_allowance'] ?? 0) : 0) +
                                     $slipDetail['clothes_allowance'] +
                                     $slipDetail['phone_allowance'] +
                                     $slipDetail['transport_allowance'] +
@@ -202,6 +203,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 							['(5e) Trợ cấp ăn ca OT / OT meal allowance',           'ot_meal_bonus'],
 							['(6) Thưởng hiệu quả / Job effectiveness bonus',      'performance_bonus'],
                         ];
+                        if ((float)($slipDetail['meal_received'] ?? 0) > 0) {
+                            array_splice($items, 1, 0, [
+                                ['(2) Trợ cấp ăn ca hợp đồng / Contract meal allowance', 'meal_allowance'],
+                            ]);
+                        }
                         foreach ($items as [$label, $key]):
 							if (in_array($key, ['responsibility_allowance', 'seniority_allowance', 'ot_meal_bonus'], true)
 							    && (float)($slipDetail[$key] ?? 0) <= 0) {
@@ -276,6 +282,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             ['(19e) Trợ cấp ăn ca OT / OT meal allowance',             'ot_meal_bonus'],
                             ['(20) Thưởng hiệu quả thực nhận / Performance received', 'performance_bonus'],
                         ];
+                        if ((float)($slipDetail['meal_received'] ?? 0) > 0) {
+                            array_splice($items2, 1, 0, [
+                                ['(15c) Trợ cấp ăn ca thực nhận / Meal allowance received', 'meal_received'],
+                            ]);
+                        }
                         foreach ($items2 as [$label, $key]):
                            if (in_array($key, ['responsibility_allowance_received', 'seniority_allowance_received', 'ot_meal_bonus'], true)
                               && (float)($slipDetail[$key] ?? 0) <= 0) {

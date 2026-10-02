@@ -165,6 +165,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 'attendance_bonus'                  => 'Chuyên cần',
                                 'total_ot_amount'                   => 'OT (lương CB)',
                             ];
+                            if ((float)($slip['meal_received'] ?? 0) > 0) {
+                                $allowFields = ['meal_received' => 'Ăn ca hợp đồng'] + $allowFields;
+                            }
                             foreach ($allowFields as $field => $label): ?>
                             <div class="col-md-2">
                                 <label class="form-label small text-muted"><?= $label ?></label>
@@ -562,7 +565,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 <script>
 const BASE = {
     basic_received   : <?= (float)$slip['basic_salary_received'] ?>,
-    meal             : 0,
+    meal             : <?= (float)($slip['meal_received'] ?? 0) ?>,
     clothes          : <?= (float)$slip['clothes_received'] ?>,
     phone            : <?= (float)$slip['phone_received'] ?>,
     transport        : <?= (float)$slip['transport_received'] ?>,
