@@ -47,7 +47,12 @@ $engine  = new PayrollEngine($pdo);
 $success = 0;
 $errors  = [];
 
-$hasLumpSumColumn = (bool)$pdo->query("SHOW COLUMNS FROM payroll_slips LIKE 'is_lump_sum'")->fetch();
+$hasLumpSumColumn = false;
+try {
+    $hasLumpSumColumn = (bool)$pdo->query("SHOW COLUMNS FROM payroll_slips WHERE Field = 'is_lump_sum'")->fetch();
+} catch (Throwable $e) {
+    error_log('Payroll check lump sum column error: ' . $e->getMessage());
+}
 
 foreach ($users as $uid) {
     try {
