@@ -1,11 +1,11 @@
 {
-    "name": "ntn_employee",
-    "short_name": "ntn_employee",
+    "name": "NTN Nhân viên",
+    "short_name": "NTN",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "NTN Employee app",
+    "background_color": "#0d6efd",
+    "theme_color": "#0d6efd",
+    "description": "NTN Nhân viên - Chấm công, OT, nghỉ phép, phiếu lương",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
