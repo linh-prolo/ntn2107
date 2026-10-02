@@ -108,6 +108,7 @@ class PayrollEngine
         $period  = $this->getPeriod($periodId);
 
         $profile = $this->getProfile($userId);
+        $isLumpSum = (int)($profile['is_lump_sum'] ?? 0) === 1;
 
         $salary  = $this->getSalaryComponents($userId);
 
@@ -231,6 +232,14 @@ class PayrollEngine
 
         $totalPaidDays = $actualWorkdays + $paidLeaveDays + $otherPaidLeaveDays + $holidayPaidDays;
 
+        if ($isLumpSum) {
+            $totalPaidDays     = $workingDays;
+            $totalLateMinutes  = 0;
+            $totalEarlyMinutes = 0;
+            $lateMinutes       = 0;
+            $isLateWarning     = false;
+            $lateWarningNote   = '';
+        }
 
 
         [$lateHours, $lateDeduction] = $this->calcLateDeduction($lateMinutes, $totalPerHour);
@@ -281,6 +290,10 @@ class PayrollEngine
 
         $kpiBonus     = (int)round($kpiBonus);
 
+        if ($isLumpSum) {
+            // Lương khoán không bị trừ KPI, vẫn giữ thưởng KPI và đủ chuyên cần.
+            $kpiDeduction = 0;
+        }
 
 
         // ── Tỷ lệ ngày ───────────────────────────────────────────────
@@ -326,7 +339,7 @@ class PayrollEngine
 
         // ── Trợ cấp thực nhận ────────────────────────────────────────
 
-        $mealReceived = 0; // Đã bỏ: công ty nấu cơm tập thể, không trả tiền ăn ca
+        $mealReceived = $isLumpSum ? round($mealAllow * $allowanceRatio) : 0; // Lương khoán nhận đủ phụ cấp hợp đồng; lương công không trả tiền ăn ca.
 
         $clothesReceived   = round($clothesAllow   * $allowanceRatio);
 
@@ -480,6 +493,9 @@ class PayrollEngine
 
         $remarkParts = [];
 
+        if ($isLumpSum)
+            $remarkParts[] = "Lương khoán: nhận đủ lương, không phụ thuộc chấm công";
+
         if ($nightShiftBonus > 0)
             $remarkParts[] = "Phụ trội đêm: +".number_format($nightShiftBonus)." đ (30% × ".number_format($nightHoursActual,1)."h × lương CB/giờ)";
         if ($otMealBonus > 0)
@@ -535,6 +551,8 @@ class PayrollEngine
             'period_id'                  => $periodId,
 
             'user_id'                    => $userId,
+
+            'is_lump_sum'                => $isLumpSum ? 1 : 0,
 
             'basic_salary'               => $basicSalary,
 

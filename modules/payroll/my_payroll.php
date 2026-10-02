@@ -55,6 +55,15 @@ if ($viewId) {
     header('Location: /erp/modules/payroll/my_payroll.php?id=' . $slips[0]['id']); exit;
 }
 
+$profileLumpSum = false;
+if ((!empty($slips) && !array_key_exists('is_lump_sum', $slips[0]))
+    || ($slipDetail && !array_key_exists('is_lump_sum', $slipDetail))) {
+    $profileStmt = $pdo->prepare("SELECT * FROM employee_profiles WHERE user_id = ?");
+    $profileStmt->execute([$user['id']]);
+    $employeeProfile = $profileStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $profileLumpSum = !empty($employeeProfile['is_lump_sum']);
+}
+
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/header.php';
 include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 ?>
@@ -104,6 +113,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <div>
                                 <div class="fw-semibold small">
                                     Tháng <?= $s['period_month'] ?>/<?= $s['period_year'] ?>
+                                    <?php if (array_key_exists('is_lump_sum', $s) ? !empty($s['is_lump_sum']) : $profileLumpSum): ?>
+                                    <span class="badge bg-info text-dark ms-1">Khoán</span>
+                                    <?php endif; ?>
                                 </div>
                                 <div style="font-size:11px"
                                      class="<?= ($slipDetail && $s['id'] == $slipDetail['id']) ? 'text-white opacity-75' : 'text-muted' ?>">
@@ -131,6 +143,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <div class="card-body border-bottom text-center pb-3">
                     <div class="fw-bold fs-5 text-uppercase">PHIẾU THANH TOÁN LƯƠNG</div>
                     <div class="small text-muted">PAYROLL SLIP</div>
+                    <?php if (array_key_exists('is_lump_sum', $slipDetail) ? !empty($slipDetail['is_lump_sum']) : $profileLumpSum): ?>
+                    <span class="badge bg-info text-dark mt-1">Khoán</span>
+                    <?php endif; ?>
                     <div class="small mt-1">
                         Tháng <?= $slipDetail['period_month'] ?>/<?= $slipDetail['period_year'] ?>
                         (<?= date('d/m/Y', strtotime($slipDetail['period_from'])) ?>
