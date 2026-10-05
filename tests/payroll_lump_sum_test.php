@@ -1,0 +1,409 @@
+<?php
+
+// Run with: php tests/payroll_lump_sum_test.php
+require_once __DIR__ . '/../modules/payroll/engine/PayrollEngine.php';
+
+final class PayrollFixturePDO extends PDO
+{
+    public array $errors = [];
+    public array $executed = [];
+    private array $fixture;
+
+    public function __construct(array $fixture)
+    {
+        $this->fixture = $fixture;
+    }
+
+    private static function normalize(string $sql): string
+    {
+        return preg_replace('/\s*([()])\s*/', '$1', trim(preg_replace('/\s+/', ' ', $sql)));
+    }
+
+    public function prepare(string $query, array $options = []): PDOStatement|false
+    {
+        // Exact whitelist: unknown SQL must fail even when the engine catches Throwable.
+        $queries = [
+            'period' => 'SELECT * FROM payroll_periods WHERE id = ?',
+            'profile' => 'SELECT * FROM employee_profiles WHERE user_id = ?',
+            'salary' => "SELECT es.id, es.component_id, es.custom_name, es.custom_name_en,
+                es.amount, es.component_type, es.approval_status,
+                sc.component_code, sc.component_name, sc.component_name_en AS sc_name_en,
+                sc.component_type AS sc_type FROM employee_salaries es
+                LEFT JOIN salary_components sc ON es.component_id = sc.id
+                WHERE es.user_id = ? AND es.is_active = 1
+                ORDER BY CASE WHEN es.approval_status = 'approved' THEN 0 ELSE 1 END ASC, es.id ASC",
+            'holidays' => 'SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN ? AND ?',
+            'leave' => "SELECT COALESCE(SUM(CASE WHEN leave_type = 'annual' THEN
+                DATEDIFF(LEAST(end_date, :to1), GREATEST(start_date, :from1)) + 1
+                ELSE 0 END), 0) AS paid_leave_days,
+                COALESCE(SUM(CASE WHEN leave_type IN ('sick', 'other') THEN
+                DATEDIFF(LEAST(end_date, :to2), GREATEST(start_date, :from2)) + 1
+                ELSE 0 END), 0) AS other_paid_leave_days,
+                COALESCE(SUM(CASE WHEN leave_type = 'unpaid' THEN
+                DATEDIFF(LEAST(end_date, :to3), GREATEST(start_date, :from3)) + 1
+                ELSE 0 END), 0) AS unpaid_leave_days
+                FROM leave_requests WHERE user_id = :uid AND status = 'approved'
+                AND start_date <= :to4 AND end_date >= :from4",
+            'ot' => "SELECT
+                COALESCE(SUM(CASE WHEN ot_type = 'weekday' THEN hours ELSE 0 END), 0) AS ot_weekday_hours,
+                COALESCE(SUM(CASE WHEN ot_type = 'weekend' THEN hours ELSE 0 END), 0) AS ot_weekend_hours,
+                COALESCE(SUM(CASE WHEN ot_type = 'holiday' THEN hours ELSE 0 END), 0) AS ot_holiday_hours,
+                COALESCE(SUM(CASE WHEN ot_type = 'night_weekday' THEN hours ELSE 0 END), 0) AS ot_night_weekday_hours,
+                COALESCE(SUM(CASE WHEN ot_type = 'night_weekend' THEN hours ELSE 0 END), 0) AS ot_night_weekend_hours,
+                COALESCE(SUM(CASE WHEN ot_type = 'night_holiday' THEN hours ELSE 0 END), 0) AS ot_night_holiday_hours
+                FROM overtime_requests WHERE user_id = ? AND status = 'approved' AND ot_date BETWEEN ? AND ?",
+            'kpi' => 'SELECT kr.salary_actual, kr.salary_per_day, kr.is_deducted, ka.assign_date
+                FROM kpi_results kr JOIN kpi_assignments ka ON kr.kpi_assignment_id = ka.id
+                WHERE ka.user_id = ? AND ka.assign_date BETWEEN ? AND ?',
+            'annual' => 'SELECT date_joined, annual_leave_total FROM employee_profiles WHERE user_id = ?',
+            'used' => "SELECT COALESCE(SUM(total_days), 0) FROM leave_requests
+                WHERE user_id = ? AND status = 'approved'
+                AND leave_type = 'annual' AND YEAR(start_date) = ?",
+            'night' => 'SELECT COUNT(*) FROM employee_shifts es JOIN work_shifts ws ON es.shift_id = ws.id
+                WHERE es.user_id = ? AND ws.is_night_shift = 1 AND es.effective_date <= ?
+                AND (es.end_date IS NULL OR es.end_date >= ?)',
+            'night_ranges' => 'SELECT es.effective_date, COALESCE(es.end_date, :to1) AS end_date
+                FROM employee_shifts es JOIN work_shifts ws ON es.shift_id = ws.id
+                WHERE es.user_id = :uid AND ws.is_night_shift = 1 AND es.effective_date <= :to2
+                AND (es.end_date IS NULL OR es.end_date >= :from1) ORDER BY es.effective_date ASC',
+            'ot_meal' => "SELECT COUNT(*) AS meal_days FROM (
+                SELECT ot_date, SUM(hours) AS total_hours FROM overtime_requests
+                WHERE user_id = ? AND status = 'approved' AND ot_date BETWEEN ? AND ?
+                AND DAYOFWEEK(ot_date) != 1 AND ot_date NOT IN ('0000-00-00')
+                GROUP BY ot_date HAVING total_hours >= ?) AS daily_ot",
+        ];
+        $nonHoliday = empty($this->fixture['profile']['resignation_date'])
+            ? " AND work_date NOT IN ('0000-00-00')" : '';
+        $queries['attendance'] = "SELECT COUNT(CASE WHEN check_in IS NOT NULL
+            AND DAYOFWEEK(work_date) != 1 $nonHoliday THEN 1 END) AS actual_workdays,
+            COALESCE(SUM(CASE WHEN is_late = 1 AND DAYOFWEEK(work_date) != 1
+            $nonHoliday THEN late_minutes ELSE 0 END), 0) AS total_late_minutes,
+            COALESCE(SUM(CASE WHEN early_leave = 1 AND DAYOFWEEK(work_date) != 1
+            $nonHoliday THEN early_leave_minutes ELSE 0 END), 0) AS total_early_minutes,
+            GROUP_CONCAT(CASE WHEN (is_late = 1 OR early_leave = 1)
+            AND DAYOFWEEK(work_date) != 1 $nonHoliday THEN CONCAT(
+            DATE_FORMAT(work_date, '%%d/%%m'),
+            CASE WHEN is_late = 1 AND early_leave = 1 THEN '(T+S)'
+            WHEN is_late = 1 THEN '(T)' ELSE '(S)' END) END
+            ORDER BY work_date SEPARATOR ', ') AS late_early_dates
+            FROM attendance_logs WHERE user_id = ? AND work_date BETWEEN ? AND ?";
+
+        foreach ($queries as $kind => $sql) {
+            if (self::normalize($query) === self::normalize($sql)) {
+                return new PayrollFixtureStatement($this, $kind);
+            }
+        }
+        $this->reject('Unrecognized SQL: ' . self::normalize($query));
+    }
+
+    public function reject(string $message): never
+    {
+        $this->errors[] = $message;
+        throw new RuntimeException($message);
+    }
+
+    public function rows(string $kind, ?array $params): array
+    {
+        $this->executed[] = $kind;
+        [$from, $to] = $this->fixture['bounds'];
+        $expected = match ($kind) {
+            'period' => [7],
+            'profile', 'salary', 'annual' => [42],
+            'used' => [42, 2026],
+            'holidays' => [$from, $to],
+            'night' => [42, $to, $from],
+            'night_ranges' => [':uid' => 42, ':to1' => $to, ':to2' => $to, ':from1' => $from],
+            'leave' => [
+                ':uid' => 42,
+                ':from1' => $from, ':to1' => $to, ':from2' => $from, ':to2' => $to,
+                ':from3' => $from, ':to3' => $to, ':from4' => $from, ':to4' => $to,
+            ],
+            'ot_meal' => [42, $from, $to, 3.0],
+            default => [42, $from, $to],
+        };
+        if ($params !== $expected) {
+            $this->reject("$kind parameters: expected " . json_encode($expected) . ', got ' . json_encode($params));
+        }
+        return match ($kind) {
+            'period' => [$this->fixture['period']],
+            'profile', 'annual' => [$this->fixture['profile']],
+            'salary' => $this->fixture['salary'],
+            'attendance' => [$this->fixture['attendance']],
+            'leave' => [['paid_leave_days' => 0, 'other_paid_leave_days' => 0, 'unpaid_leave_days' => 0]],
+            'ot' => [[
+                'ot_weekday_hours' => 0, 'ot_weekend_hours' => 0, 'ot_holiday_hours' => 0,
+                'ot_night_weekday_hours' => 0, 'ot_night_weekend_hours' => 0, 'ot_night_holiday_hours' => 0,
+            ]],
+            'kpi' => $this->fixture['kpi'],
+            'used', 'night', 'ot_meal' => [[0]],
+            'holidays', 'night_ranges' => [],
+        };
+    }
+}
+
+final class PayrollFixtureStatement extends PDOStatement
+{
+    private PayrollFixturePDO $pdo;
+    private string $kind;
+    private array $rows = [];
+    private int $position = 0;
+
+    public function __construct(PayrollFixturePDO $pdo, string $kind)
+    {
+        $this->pdo = $pdo;
+        $this->kind = $kind;
+    }
+
+    public function execute(?array $params = null): bool
+    {
+        $this->rows = $this->pdo->rows($this->kind, $params);
+        $this->position = 0;
+        return true;
+    }
+
+    public function fetch(int $mode = PDO::FETCH_DEFAULT, int $cursorOrientation = PDO::FETCH_ORI_NEXT, int $cursorOffset = 0): mixed
+    {
+        return $this->rows[$this->position++] ?? false;
+    }
+
+    public function fetchAll(int $mode = PDO::FETCH_DEFAULT, mixed ...$args): array
+    {
+        $rows = array_slice($this->rows, $this->position);
+        $this->position = count($this->rows);
+        return $mode === PDO::FETCH_COLUMN
+            ? array_map(static fn(array $row) => array_values($row)[$args[0] ?? 0], $rows) : $rows;
+    }
+
+    public function fetchColumn(int $column = 0): mixed
+    {
+        $row = $this->fetch();
+        return $row === false ? false : array_values($row)[$column];
+    }
+}
+
+function payrollFixture(?int $flag = 1): array
+{
+    $profile = [
+        'user_id' => 42, 'date_joined' => '2025-01-01', 'resignation_date' => null,
+        'annual_leave_total' => 12, 'has_social_insurance' => 0, 'dependants' => 0,
+    ];
+    if ($flag !== null) {
+        $profile['is_lump_sum'] = $flag;
+    }
+    $components = [
+        'basic' => 20_000_000, 'meal' => 1_000_000, 'clothes' => 500_000,
+        'phone' => 500_000, 'transport' => 1_000_000, 'housing' => 2_000_000,
+        'responsibility' => 1_000_000, 'seniority' => 500_000,
+        'performance' => 1_000_000, 'attendance_bonus' => 1_000_000,
+        'custom_allowance' => 1_500_000,
+    ];
+    $salary = [];
+    foreach ($components as $code => $amount) {
+        $id = count($salary) + 1;
+        $salary[] = [
+            'id' => $id, 'component_id' => $id, 'component_code' => $code, 'amount' => $amount,
+            'component_type' => in_array($code, ['performance', 'attendance_bonus']) ? 'bonus' : 'earning',
+            'approval_status' => 'approved',
+        ];
+    }
+    return [
+        'period' => ['id' => 7, 'period_from' => '2026-06-01', 'period_to' => '2026-06-30',
+            'period_year' => 2026, 'working_days' => 99],
+        'profile' => $profile, 'salary' => $salary,
+        'bounds' => ['2026-06-01', '2026-06-30'],
+        'attendance' => ['actual_workdays' => 0, 'total_late_minutes' => 0,
+            'total_early_minutes' => 0, 'late_early_dates' => ''],
+        'kpi' => [],
+    ];
+}
+
+function payrollEqual(mixed $expected, mixed $actual, string $label): void
+{
+    $equal = is_numeric($expected) && is_numeric($actual)
+        ? abs((float)$expected - (float)$actual) < 0.000001 : $expected === $actual;
+    if (!$equal) {
+        throw new RuntimeException("$label: expected " . var_export($expected, true)
+            . ', got ' . var_export($actual, true));
+    }
+}
+
+function payrollCalculate(array $fixture): array
+{
+    $pdo = new PayrollFixturePDO($fixture);
+    $engine = new PayrollEngine($pdo);
+    $result = $engine->calculate(7, 42);
+    payrollEqual([], $pdo->errors, 'No swallowed fixture SQL/parameter errors');
+    return [$result, $engine, $pdo];
+}
+
+function payrollFullContract(array $result): void
+{
+    foreach ([
+        'gross_salary' => 30_000_000, 'basic_salary_received' => 20_000_000,
+        'meal_received' => 1_000_000, 'clothes_received' => 500_000, 'phone_received' => 500_000,
+        'transport_received' => 1_000_000, 'housing_received' => 2_000_000,
+        'responsibility_allowance_received' => 1_000_000, 'seniority_allowance_received' => 500_000,
+        'performance_bonus' => 1_000_000, 'attendance_bonus' => 1_000_000,
+        'other_income' => 1_500_000, 'attendance_bonus_eligible' => 1,
+    ] as $field => $expected) {
+        payrollEqual($expected, $result[$field], $field);
+    }
+}
+
+function payrollPenaltyFixture(?int $flag): array
+{
+    $fixture = payrollFixture($flag);
+    $fixture['attendance'] = [
+        'actual_workdays' => 13, 'total_late_minutes' => 36,
+        'total_early_minutes' => 10, 'late_early_dates' => '02/06(T), 03/06(S)',
+    ];
+    $fixture['kpi'] = [
+        ['salary_per_day' => 1_000_000, 'salary_actual' => 800_000, 'is_deducted' => 1, 'assign_date' => '2026-06-02'],
+        ['salary_per_day' => 1_000_000, 'salary_actual' => 1_300_000, 'is_deducted' => 0, 'assign_date' => '2026-06-03'],
+    ];
+    return $fixture;
+}
+
+$tests = [];
+foreach (['missing' => null, 'zero' => 0] as $name => $flag) {
+    $tests["ordinary flag $name, no attendance"] = static function () use ($flag): void {
+        [$result] = payrollCalculate(payrollFixture($flag));
+        foreach (['is_lump_sum', 'total_paid_days', 'basic_salary_received', 'meal_received',
+            'attendance_bonus', 'gross_salary', 'net_salary'] as $field) {
+            payrollEqual(0, $result[$field], $field);
+        }
+        payrollEqual(26, $result['working_days_standard'], 'standard days');
+    };
+    $tests["ordinary flag $name, partial attendance and penalties"] = static function () use ($flag): void {
+        [$result] = payrollCalculate(payrollPenaltyFixture($flag));
+        foreach ([
+            'is_lump_sum' => 0, 'working_days_standard' => 26, 'total_paid_days' => 13,
+            'basic_salary_received' => 10_000_000, 'meal_received' => 0,
+            'clothes_received' => 250_000, 'phone_received' => 250_000,
+            'transport_received' => 500_000, 'housing_received' => 1_000_000,
+            'responsibility_allowance_received' => 500_000, 'seniority_allowance_received' => 250_000,
+            'performance_bonus' => 500_000, 'other_income' => 750_000,
+            'attendance_bonus' => 0, 'attendance_bonus_eligible' => 0,
+            'is_late_warning' => 1, 'late_early_hours' => 1, 'late_early_deduction' => 139_423,
+            'late_deduction' => 139_423, 'kpi_deduction' => 200_000, 'kpi_bonus' => 300_000,
+            'gross_salary' => 14_300_000, 'pit_amount' => 0, 'net_salary' => 13_960_577,
+            'late_warning_note' => '02/06(T), 03/06(S)',
+        ] as $field => $expected) {
+            payrollEqual($expected, $result[$field], $field);
+        }
+    };
+}
+
+$tests['lump sum pays full contract without attendance'] = static function (): void {
+    [$result, $engine] = payrollCalculate(payrollFixture());
+    payrollFullContract($result);
+    payrollEqual(1, $result['is_lump_sum'], 'lump sum flag');
+    payrollEqual(0, $result['actual_workdays'], 'actual attendance stays zero');
+    payrollEqual(26, $engine->calcWorkingDays('2026-06-01', '2026-06-30'), 'known calendar days');
+    payrollEqual(26, $result['working_days_standard'], 'standard days ignores stored 99');
+    payrollEqual(26, $result['total_paid_days'], 'full paid days');
+    payrollEqual(1_425_000, $result['pit_amount'], 'progressive PIT');
+    payrollEqual(28_575_000, $result['net_salary'], 'net after PIT');
+};
+
+$tests['lump sum suppresses late and KPI deductions but preserves KPI bonus'] = static function (): void {
+    [$result] = payrollCalculate(payrollPenaltyFixture(1));
+    foreach (['late_early_hours', 'late_early_deduction', 'late_deduction',
+        'is_late_warning', 'kpi_deduction'] as $field) {
+        payrollEqual(0, $result[$field], $field);
+    }
+    payrollEqual('', $result['late_warning_note'], 'no late warning note');
+    payrollEqual(13, $result['actual_workdays'], 'actual attendance retained');
+    payrollEqual(300_000, $result['kpi_bonus'], 'KPI bonus retained');
+    payrollEqual(1_000_000, $result['attendance_bonus'], 'attendance bonus retained despite failed KPI');
+    payrollEqual(30_300_000, $result['gross_salary'], 'contract plus KPI bonus');
+    payrollEqual(28_830_000, $result['net_salary'], 'net without late/KPI deductions');
+};
+
+foreach ([
+    'mid-period joining' => ['2026-06-16', null, '2026-06-16', '2026-06-30', 13],
+    'mid-period resignation' => ['2025-01-01', '2026-06-15', '2026-06-01', '2026-06-15', 13],
+    'joining and resignation' => ['2026-06-10', '2026-06-20', '2026-06-10', '2026-06-20', 10],
+] as $name => [$joined, $resigned, $from, $to, $days]) {
+    $tests[$name] = static function () use ($joined, $resigned, $from, $to, $days): void {
+        $fixture = payrollFixture();
+        $fixture['profile']['date_joined'] = $joined;
+        $fixture['profile']['resignation_date'] = $resigned;
+        $fixture['bounds'] = [$from, $to];
+        [$result, $engine] = payrollCalculate($fixture);
+        payrollEqual($days, $engine->calcWorkingDays($from, $fixture['period']['period_to'], $resigned), 'calendar days');
+        payrollEqual($days, $result['working_days_standard'], 'employment-bounded standard days');
+        payrollEqual($days, $result['total_paid_days'], 'employment-bounded paid days');
+        payrollFullContract($result);
+        if ($resigned !== null) {
+            payrollEqual(3_000_000, $result['pit_amount'], 'resignation PIT');
+        }
+    };
+}
+
+foreach ([
+    'joined after period' => ['2026-07-01', null],
+    'resigned before period' => ['2025-01-01', '2026-05-31'],
+] as $name => [$joined, $resigned]) {
+    $tests[$name] = static function () use ($joined, $resigned): void {
+        $fixture = payrollPenaltyFixture(1);
+        $fixture['profile']['date_joined'] = $joined;
+        $fixture['profile']['resignation_date'] = $resigned;
+        [$result, , $pdo] = payrollCalculate($fixture);
+        foreach (['working_days_standard', 'total_paid_days', 'basic_salary_received',
+            'meal_received', 'attendance_bonus', 'kpi_bonus', 'gross_salary', 'net_salary'] as $field) {
+            payrollEqual(0, $result[$field], $field);
+        }
+        payrollEqual(['period', 'profile', 'salary', 'annual', 'used'], $pdo->executed, 'no queries outside employment');
+    };
+}
+
+$tests['Sunday-only period pays no wages'] = static function (): void {
+    $fixture = payrollFixture();
+    $fixture['period']['period_from'] = $fixture['period']['period_to'] = '2026-06-07';
+    $fixture['bounds'] = ['2026-06-07', '2026-06-07'];
+    [$result, $engine] = payrollCalculate($fixture);
+    payrollEqual(0, $engine->calcWorkingDays('2026-06-07', '2026-06-07'), 'Sunday working days');
+    foreach (['working_days_standard', 'total_paid_days', 'basic_salary_received',
+        'meal_received', 'attendance_bonus', 'gross_salary', 'net_salary'] as $field) {
+        payrollEqual(0, $result[$field], $field);
+    }
+};
+
+$tests['resignation PIT and social insurance retain existing rules'] = static function (): void {
+    $fixture = payrollFixture(0);
+    $fixture['profile']['resignation_date'] = '2026-06-15';
+    $fixture['profile']['has_social_insurance'] = 1;
+    $fixture['profile']['dependants'] = 2;
+    $fixture['bounds'] = ['2026-06-01', '2026-06-15'];
+    $fixture['attendance']['actual_workdays'] = 13;
+    [$ordinary] = payrollCalculate($fixture);
+    $fixture['profile']['is_lump_sum'] = 1;
+    $fixture['attendance']['actual_workdays'] = 0;
+    [$lump] = payrollCalculate($fixture);
+    foreach ([$ordinary, $lump] as $result) {
+        payrollEqual(2_257_500, $result['si_employee'], 'employee SI on basic + responsibility + seniority');
+        payrollEqual(4_622_500, $result['si_company'], 'company SI');
+        payrollEqual(round($result['gross_salary'] * 0.10), $result['pit_amount'], '10% PIT without personal/dependant deductions');
+        payrollEqual($result['gross_salary'] - $result['si_employee'] - $result['pit_amount'],
+            $result['net_salary'], 'net after SI and resignation PIT');
+    }
+    payrollEqual(29_000_000, $ordinary['gross_salary'], 'ordinary meals remain unpaid');
+    payrollEqual(30_000_000, $lump['gross_salary'], 'lump sum contractual meals');
+    payrollEqual(2_900_000, $ordinary['pit_amount'], 'ordinary resignation PIT');
+    payrollEqual(3_000_000, $lump['pit_amount'], 'lump sum resignation PIT');
+    payrollEqual($ordinary['si_employee'], $lump['si_employee'], 'SI unchanged by lump sum');
+};
+
+$failed = 0;
+foreach ($tests as $name => $test) {
+    try {
+        $test();
+        echo "PASS: $name\n";
+    } catch (Throwable $error) {
+        $failed++;
+        fwrite(STDERR, "FAIL: $name: {$error->getMessage()}\n");
+    }
+}
+echo count($tests) . ' tests, ' . $failed . " failures\n";
+exit($failed === 0 ? 0 : 1);

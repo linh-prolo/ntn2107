@@ -47,9 +47,19 @@ $engine  = new PayrollEngine($pdo);
 $success = 0;
 $errors  = [];
 
+$hasLumpSumColumn = false;
+try {
+    $hasLumpSumColumn = (bool)$pdo->query("SHOW COLUMNS FROM payroll_slips WHERE Field = 'is_lump_sum'")->fetch();
+} catch (Throwable $e) {
+    error_log('Payroll check lump sum column error: ' . $e->getMessage());
+}
+
 foreach ($users as $uid) {
     try {
         $data = $engine->calculate($periodId, (int)$uid);
+        if (!$hasLumpSumColumn) {
+            unset($data['is_lump_sum']);
+        }
 
         // Kiểm tra slip đã tồn tại chưa
         $chk = $pdo->prepare("SELECT id, manually_adjusted FROM payroll_slips WHERE period_id = ? AND user_id = ?");

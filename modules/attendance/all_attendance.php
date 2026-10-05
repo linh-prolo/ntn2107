@@ -63,6 +63,13 @@ $empStmt = $pdo->prepare($empSQL);
 $empStmt->execute($empParams);
 $employees = $empStmt->fetchAll();
 
+$lumpSumUsers = [];
+foreach ($pdo->query("SELECT * FROM employee_profiles")->fetchAll(PDO::FETCH_ASSOC) as $employeeProfile) {
+    if (!empty($employeeProfile['is_lump_sum'])) {
+        $lumpSumUsers[(int)$employeeProfile['user_id']] = true;
+    }
+}
+
 $attStmt = $pdo->prepare("
     SELECT al.*
     FROM attendance_logs al
@@ -133,7 +140,7 @@ try {
     error_log('device alerts query error: ' . $e->getMessage());
 }
 
-function calcStats($userId, $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $daysInMon, $holidayDates) {
+function calcStats($userId, $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $daysInMon, $holidayDates, $isLumpSum = false) {
     $stats = [
         'work_days'=>0,'absent_days'=>0,'leave_days'=>0,
         'late_count'=>0,'late_minutes'=>0,
@@ -179,10 +186,10 @@ function calcStats($userId, $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $
                 $stats['early_count']++;
                 $stats['early_minutes'] += (int)($att['early_leave_minutes'] ?? 0);
             }
-            if (!empty($att['missing_checkout'])) {
+            if (!$isLumpSum && !empty($att['missing_checkout'])) {
                 $stats['missing_checkout_count']++;
             }
-        } else {
+        } elseif (!$isLumpSum) {
             $stats['absent_days']++;
         }
     }
@@ -192,12 +199,15 @@ function calcStats($userId, $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $
 $depts   = $pdo->query("SELECT * FROM departments ORDER BY name")->fetchAll();
 $empList = $pdo->query("SELECT id, full_name, employee_code FROM users WHERE is_active=1 ORDER BY full_name")->fetchAll();
 
+$missingCheckoutFilter = $lumpSumUsers
+    ? ' AND user_id NOT IN (' . implode(',', array_keys($lumpSumUsers)) . ')'
+    : '';
 $summaryStmt = $pdo->prepare("
     SELECT
         COUNT(DISTINCT user_id)                                          AS total_checkins,
         SUM(is_late)                                                     AS total_late,
         ROUND(SUM(work_hours), 1)                                        AS total_hours,
-        COUNT(CASE WHEN check_in IS NOT NULL AND check_out IS NULL THEN 1 END) AS missing_checkout
+        COUNT(CASE WHEN check_in IS NOT NULL AND check_out IS NULL $missingCheckoutFilter THEN 1 END) AS missing_checkout
     FROM attendance_logs
     WHERE MONTH(work_date)=? AND YEAR(work_date)=?
 ");
@@ -401,7 +411,8 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <tbody>
                     <?php
                     foreach ($employees as $emp):
-                        $st = calcStats($emp['id'], $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $daysInMon, $holidayDates);
+                        $isLumpSum = !empty($lumpSumUsers[$emp['id']]);
+                        $st = calcStats($emp['id'], $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $daysInMon, $holidayDates, $isLumpSum);
                         // Tổng phút trừ = trễ + về sớm
                         $totalDeductMin = $st['late_minutes'] + $st['early_minutes'];
                         // Kiểm tra có cảnh báo cùng thiết bị trong tháng không
@@ -414,6 +425,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <td class="sticky-col py-1">
                             <div class="fw-semibold" style="font-size:12px;line-height:1.2;">
                                 <?= htmlspecialchars($emp['full_name']) ?>
+                                <?php if ($isLumpSum): ?><span class="badge bg-info text-dark ms-1" style="font-size:9px;">Khoán</span><?php endif; ?>
                                 <?php if ($hasSameDeviceAlert): ?>
                                 <span class="badge bg-danger ms-1" style="font-size:9px;" title="Nghi vấn chấm công hộ - cùng thiết bị">⚠️ Hộ?</span>
                                 <?php endif; ?>
@@ -444,7 +456,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 if ($att && $att['check_in']) {
                                     $bg = '#f3e8ff';
                                     $checkIn  = date('H:i', strtotime($att['check_in']));
-                                    $checkOut = $att['check_out'] ? date('H:i', strtotime($att['check_out'])) : '?';
+                                    $checkOut = $att['check_out'] ? date('H:i', strtotime($att['check_out'])) : ($isLumpSum ? '—' : '?');
                                     $title = "CN | Vào: $checkIn | Ra: $checkOut";
                                     $content = '<div style="font-size:9px;line-height:1.4;">';
                                     $content .= '<span style="color:#7c3aed;font-weight:bold;">CN</span><br>';
@@ -468,9 +480,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             } elseif ($att && $att['check_in']) {
                                 $isLate    = $att['is_late'];
                                 $isEarly   = $att['early_leave'];
-                                $isMissingCO = !empty($att['missing_checkout']);
+                                $isMissingCO = !$isLumpSum && !empty($att['missing_checkout']);
                                 $checkIn   = date('H:i', strtotime($att['check_in']));
-                                $checkOut  = $att['check_out'] ? date('H:i', strtotime($att['check_out'])) : '?';
+                                $checkOut  = $att['check_out'] ? date('H:i', strtotime($att['check_out'])) : ($isLumpSum ? '—' : '?');
 
                                 if ($isLate && $isEarly)      $bg = '#fff7e6';
                                 elseif ($isLate)              $bg = '#fffbf0';
@@ -504,11 +516,14 @@ if ($isMissingCO) {
     $content .= '<span style="color:#16a34a;font-weight:bold;">✓</span><br>';
 }
 $content .= '<span style="color:#333;">' . $checkIn . '</span><br>';
-$checkOutColor = $att['check_out'] ? '#666' : ($isMissingCO ? '#f59e0b' : '#dc2626');
+$checkOutColor = ($att['check_out'] || $isLumpSum) ? '#666' : ($isMissingCO ? '#f59e0b' : '#dc2626');
 $content .= '<span style="color:' . $checkOutColor . ';">' . $checkOut . '</span>';
 $content .= $locDot ? '<br>' . $locDot : '';
 if ($ot) $content .= '<br><span style="color:#6f42c1;font-size:8px;">OT</span>';
 $content .= '</div>';
+                            } elseif ($isLumpSum) {
+                                $content = '<span class="text-muted" style="font-size:10px;">Khoán</span>';
+                                $title = 'Trả lương khoán, không cần chấm công';
                             } else {
                                 $bg = '#fff5f5';
                                 $content = '<span style="color:#dc2626;font-size:11px;font-weight:bold;">✗</span>';
@@ -589,7 +604,8 @@ $content .= '</div>';
                     ], 0);
 
                     foreach ($employees as $emp):
-                        $st = calcStats($emp['id'], $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $daysInMon, $holidayDates);
+                        $isLumpSum = !empty($lumpSumUsers[$emp['id']]);
+                        $st = calcStats($emp['id'], $attMap, $leaveMap, $otMap, $viewMonth, $viewYear, $daysInMon, $holidayDates, $isLumpSum);
                         foreach ($grandTotals as $k => $v) $grandTotals[$k] += $st[$k];
                         $totalDeductMin = $st['late_minutes'] + $st['early_minutes'];
                         $hasSameDeviceAlertSum = false;
@@ -601,6 +617,7 @@ $content .= '</div>';
                         <td class="sticky-col">
                             <div class="fw-semibold small">
                                 <?= htmlspecialchars($emp['full_name']) ?>
+                                <?php if ($isLumpSum): ?><span class="badge bg-info text-dark ms-1" style="font-size:9px;">Khoán</span><?php endif; ?>
                                 <?php if ($hasSameDeviceAlertSum): ?>
                                 <span class="badge bg-danger ms-1" style="font-size:9px;" title="Nghi vấn chấm công hộ - cùng thiết bị">⚠️ Hộ?</span>
                                 <?php endif; ?>
@@ -742,6 +759,7 @@ $content .= '</div>';
 
 <script>
 const IS_DIRECTOR = <?= json_encode($isDirector) ?>;
+const LUMP_SUM_USER_IDS = <?= json_encode(array_keys($lumpSumUsers)) ?>;
 
 function formatLocationFlag(flag) {
     const map = {
@@ -782,6 +800,7 @@ function buildLocationLink(lat, lng) {
 }
 
 async function showDayDetail(userId, dateStr, empName) {
+    const isLumpSum = LUMP_SUM_USER_IDS.includes(Number(userId));
     document.getElementById('dayDetailTitle').textContent = `📅 ${empName} — ${dateStr}`;
     document.getElementById('dayDetailBody').innerHTML =
         '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Đang tải...</div>';
@@ -805,7 +824,7 @@ async function showDayDetail(userId, dateStr, empName) {
                         <tr><th width="40%">Giờ vào</th>
                             <td class="fw-bold text-success">${checkInVal || '—'}</td></tr>
                         <tr><th>Giờ ra</th>
-                            <td class="fw-bold text-danger">${checkOutVal || '⚠️ Chưa ra'}</td></tr>
+                            <td class="fw-bold ${isLumpSum ? 'text-muted' : 'text-danger'}">${checkOutVal || (isLumpSum ? '— (Khoán)' : '⚠️ Chưa ra')}</td></tr>
                         <tr><th>Số giờ</th>
                             <td>${data.att?.work_hours ?? '—'}h</td></tr>
                         <tr><th>Đi trễ</th>

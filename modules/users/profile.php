@@ -63,6 +63,13 @@ $stmt = $pdo->prepare("SELECT * FROM employee_profiles WHERE user_id = ?");
 $stmt->execute([$targetId]);
 $profile = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
+$hasLumpSumColumn = false;
+try {
+    $hasLumpSumColumn = (bool)$pdo->query("SHOW COLUMNS FROM employee_profiles WHERE Field = 'is_lump_sum'")->fetch();
+} catch (Throwable $e) {
+    error_log('profile.php check lump sum column error: ' . $e->getMessage());
+}
+
 $errors = [];
 
 // ── XỬ LÝ FORM ──────────────────────────────────────────────────────────
@@ -108,6 +115,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'has_social_insurance'    => isset($_POST['has_social_insurance']) ? 1 : 0,
         'dependants'              => max(0, (int)($_POST['dependants'] ?? 0)),
     ];
+    if ($canEditSalary && $hasLumpSumColumn) {
+        $data['is_lump_sum'] = isset($_POST['is_lump_sum']) ? 1 : 0;
+    }
 
     if ($data['same_as_permanent']) {
         $data['temp_province']      = $data['permanent_province'];
@@ -624,6 +634,23 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             </label>
                         </div>
                     </div>
+
+                    <?php if ($canEditSalary): ?>
+                    <div class="col-md-4">
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" name="is_lump_sum"
+                                   id="isLumpSum" value="1"
+                                   <?= (!empty($errors) ? isset($_POST['is_lump_sum']) : !empty($profile['is_lump_sum'])) ? 'checked' : '' ?>
+                                   <?= $hasLumpSumColumn ? '' : 'disabled' ?>>
+                            <label class="form-check-label" for="isLumpSum">
+                                Trả lương khoán (nhận đủ lương, không cần chấm công)
+                            </label>
+                        </div>
+                        <?php if (!$hasLumpSumColumn): ?>
+                        <div class="form-text text-warning">Cần chạy migration bổ sung cột is_lump_sum để sử dụng.</div>
+                        <?php endif; ?>
+                    </div>
+                    <?php endif; ?>
 
                     <div class="col-md-4">
                         <label class="form-label fw-semibold">Số người phụ thuộc (giảm trừ thuế)</label>
