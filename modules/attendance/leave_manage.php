@@ -6,6 +6,18 @@ requireRole('production', 'manager', 'director', 'accountant');
 
 $user = currentUser();
 $pdo = getDBConnection();
+$filter = $_GET['filter'] ?? 'all';
+$month = (int)($_GET['month'] ?? date('n'));
+$year = (int)($_GET['year'] ?? date('Y'));
+if ($month < 1 || $month > 12 || $year < 2000 || $year > 2100) {
+    $month = (int)date('n');
+    $year = (int)date('Y');
+}
+$monthStart = sprintf('%04d-%02d-01', $year, $month);
+$monthEnd = (new DateTime($monthStart))->modify('first day of next month')->format('Y-m-d');
+$monthDate = new DateTime($monthStart);
+$previousMonth = (clone $monthDate)->modify('-1 month');
+$nextMonth = (clone $monthDate)->modify('+1 month');
 
 // Xử lý duyệt/từ chối
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? '')) {
@@ -66,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         } else {
             setFlash('danger', '❌ ' . implode(' ', $errors));
         }
-        header('Location: /erp/modules/attendance/leave_manage.php?filter=' . ($_GET['filter'] ?? 'pending'));
+        header('Location: /erp/modules/attendance/leave_manage.php?' . http_build_query(['filter' => $filter, 'month' => $month, 'year' => $year]));
         exit();
     }
 
@@ -76,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     if ($action === 'director_override') {
         if (!hasRole('director')) {
             setFlash('danger', '⛔ Bạn không có quyền thực hiện thao tác này.');
-            header('Location: /erp/modules/attendance/leave_manage.php?filter=' . ($_GET['filter'] ?? 'approved'));
+            header('Location: /erp/modules/attendance/leave_manage.php?' . http_build_query(['filter' => $filter, 'month' => $month, 'year' => $year]));
             exit();
         }
 
@@ -139,7 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         } else {
             setFlash('danger', '❌ Không thể thực hiện thao tác này.');
         }
-        header('Location: /erp/modules/attendance/leave_manage.php?filter=' . ($_GET['filter'] ?? 'approved'));
+        header('Location: /erp/modules/attendance/leave_manage.php?' . http_build_query(['filter' => $filter, 'month' => $month, 'year' => $year]));
         exit();
     }
 
@@ -156,7 +168,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
 
     if (!$owner || !canApprove($user, $owner)) {
         setFlash('danger', '⛔ Bạn không có quyền duyệt đơn này.');
-        header('Location: /erp/modules/attendance/leave_manage.php');
+        header('Location: /erp/modules/attendance/leave_manage.php?' . http_build_query(['filter' => $filter, 'month' => $month, 'year' => $year]));
         exit();
     }
 
@@ -169,11 +181,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         $notif->execute([$owner['id'], $msg, $id]);
         setFlash('success', 'Đã xử lý đơn nghỉ phép.');
     }
-    header('Location: /erp/modules/attendance/leave_manage.php');
+    header('Location: /erp/modules/attendance/leave_manage.php?' . http_build_query(['filter' => $filter, 'month' => $month, 'year' => $year]));
     exit();
 }
 
-$filter = $_GET['filter'] ?? 'pending';
 $myLevel = getRoleLevel($user['role']);
 
 // Chỉ hiển thị đơn của cấp dưới mình và không phải đơn của chính mình
@@ -188,16 +199,19 @@ $stmt = $pdo->prepare("
     LEFT JOIN users a ON lr.approved_by = a.id
     WHERE (? = 'all' OR lr.status = ?)
       AND lr.user_id != ?
+      AND lr.start_date >= ?
+      AND lr.start_date < ?
       AND (
            (r.name = 'employee'   AND ? >= 2)
         OR (r.name = 'production' AND ? >= 3)
         OR (r.name = 'manager'    AND ? >= 4)
         OR (r.name = 'accountant' AND ? >= 5)
       )
-    ORDER BY lr.created_at DESC
+    ORDER BY CASE WHEN lr.status = 'pending' THEN 0 ELSE 1 END,
+             lr.created_at DESC, lr.start_date DESC
     LIMIT 200
 ");
-$stmt->execute([$filter, $filter, $user['id'], $myLevel, $myLevel, $myLevel, $myLevel]);
+$stmt->execute([$filter, $filter, $user['id'], $monthStart, $monthEnd, $myLevel, $myLevel, $myLevel, $myLevel]);
 $requests = $stmt->fetchAll();
 
 // Lấy danh sách nhân viên cho form tạo thủ công
@@ -225,12 +239,29 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
     </div>
     <?php showFlash(); ?>
 
+    <!-- Lọc theo tháng dựa trên ngày bắt đầu nghỉ. -->
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <a class="btn btn-outline-secondary btn-sm" href="?<?= htmlspecialchars(http_build_query(['filter' => $filter, 'month' => (int)$previousMonth->format('n'), 'year' => (int)$previousMonth->format('Y')])) ?>">‹ Tháng trước</a>
+        <form method="GET" class="d-flex align-items-center gap-2">
+            <input type="hidden" name="filter" value="<?= htmlspecialchars($filter) ?>">
+            <select name="month" class="form-select form-select-sm" aria-label="Tháng">
+                <?php for ($m = 1; $m <= 12; $m++): ?>
+                    <option value="<?= $m ?>" <?= $month === $m ? 'selected' : '' ?>>Tháng <?= $m ?></option>
+                <?php endfor; ?>
+            </select>
+            <input type="number" name="year" class="form-control form-control-sm" aria-label="Năm" min="2000" max="2100" value="<?= $year ?>" style="width:100px">
+            <button class="btn btn-primary btn-sm" type="submit">Xem</button>
+        </form>
+        <a class="btn btn-outline-secondary btn-sm" href="?<?= htmlspecialchars(http_build_query(['filter' => $filter, 'month' => (int)$nextMonth->format('n'), 'year' => (int)$nextMonth->format('Y')])) ?>">Tháng sau ›</a>
+        <span class="text-muted small"><?= htmlspecialchars($monthDate->format('m/Y')) ?></span>
+    </div>
+
     <!-- Filter -->
     <div class="btn-group mb-3">
-        <a href="?filter=pending" class="btn btn-sm <?= $filter==='pending'?'btn-warning':'btn-outline-warning' ?>">⌛ Chờ duyệt</a>
-        <a href="?filter=approved" class="btn btn-sm <?= $filter==='approved'?'btn-success':'btn-outline-success' ?>">✅ Đã duyệt</a>
-        <a href="?filter=rejected" class="btn btn-sm <?= $filter==='rejected'?'btn-danger':'btn-outline-danger' ?>">❌ Từ chối</a>
-        <a href="?filter=all" class="btn btn-sm <?= $filter==='all'?'btn-secondary':'btn-outline-secondary' ?>">Tất cả</a>
+        <a href="?<?= htmlspecialchars(http_build_query(['filter' => 'pending', 'month' => $month, 'year' => $year])) ?>" class="btn btn-sm <?= $filter==='pending'?'btn-warning':'btn-outline-warning' ?>">⌛ Chờ duyệt</a>
+        <a href="?<?= htmlspecialchars(http_build_query(['filter' => 'approved', 'month' => $month, 'year' => $year])) ?>" class="btn btn-sm <?= $filter==='approved'?'btn-success':'btn-outline-success' ?>">✅ Đã duyệt</a>
+        <a href="?<?= htmlspecialchars(http_build_query(['filter' => 'rejected', 'month' => $month, 'year' => $year])) ?>" class="btn btn-sm <?= $filter==='rejected'?'btn-danger':'btn-outline-danger' ?>">❌ Từ chối</a>
+        <a href="?<?= htmlspecialchars(http_build_query(['filter' => 'all', 'month' => $month, 'year' => $year])) ?>" class="btn btn-sm <?= $filter==='all'?'btn-secondary':'btn-outline-secondary' ?>">Tất cả</a>
     </div>
 
     <div class="card border-0 shadow-sm">
@@ -247,7 +278,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <div class="fw-semibold"><?= htmlspecialchars($r['full_name']) ?></div>
                             <small class="text-muted"><?= $r['employee_code'] ?> &bull; <?= htmlspecialchars($r['department_name'] ?? '') ?></small>
                         </td>
-                        <td><?= ['annual'=>'Phép năm','sick'=>'Ốm','unpaid'=>'KL','other'=>'Khác'][$r['leave_type']] ?? $r['leave_type'] ?></td>
+                        <td><span id="leaveTypeLabel<?= (int)$r['id'] ?>"><?= ['annual'=>'Phép năm','sick'=>'Ốm','unpaid'=>'KL','other'=>'Khác'][$r['leave_type']] ?? $r['leave_type'] ?></span></td>
                         <td><?= formatDate($r['start_date']) ?></td>
                         <td><?= formatDate($r['end_date']) ?></td>
                         <td><?= $r['total_days'] ?></td>
@@ -261,7 +292,22 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <td>
                         <?php
                         $requesterForCheck = ['id' => $r['user_id'], 'role' => $r['requester_role']];
-                        if ($r['status'] === 'pending' && canApprove($user, $requesterForCheck)):
+                        if (hasRole('director')):
+                        ?>
+                            <div class="d-flex flex-column gap-1 mb-1">
+                                <div class="d-flex gap-1">
+                                    <select class="form-select form-select-sm" id="leaveType<?= (int)$r['id'] ?>" aria-label="Đổi loại phép">
+                                        <option value="annual" <?= $r['leave_type'] === 'annual' ? 'selected' : '' ?>>Phép năm</option>
+                                        <option value="sick" <?= $r['leave_type'] === 'sick' ? 'selected' : '' ?>>Ốm</option>
+                                        <option value="unpaid" <?= $r['leave_type'] === 'unpaid' ? 'selected' : '' ?>>KL</option>
+                                        <option value="other" <?= $r['leave_type'] === 'other' ? 'selected' : '' ?>>Khác</option>
+                                    </select>
+                                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="saveLeaveType(<?= (int)$r['id'] ?>)">Lưu</button>
+                                </div>
+                                <small id="leaveTypeMessage<?= (int)$r['id'] ?>" aria-live="polite"></small>
+                            </div>
+                        <?php endif; ?>
+                        <?php if ($r['status'] === 'pending' && canApprove($user, $requesterForCheck)): ?>
                         ?>
                             <div class="d-flex gap-1">
                                 <form method="POST" style="display:inline">
@@ -460,6 +506,38 @@ function showOverrideLeave(id, empName, currentLeaveType) {
     }
 
     new bootstrap.Modal(document.getElementById('overrideLeaveModal')).show();
+}
+
+async function saveLeaveType(id) {
+    const select = document.getElementById(`leaveType${id}`);
+    const message = document.getElementById(`leaveTypeMessage${id}`);
+    const button = select.parentElement.querySelector('button');
+    const formData = new FormData();
+    formData.append('csrf_token', <?= json_encode($csrf) ?>);
+    formData.append('request_id', id);
+    formData.append('leave_type', select.value);
+    button.disabled = true;
+    message.textContent = 'Đang lưu...';
+    message.className = 'text-muted';
+    try {
+        const response = await fetch('/erp/api/attendance/update_leave_type.php', {
+            method: 'POST',
+            body: formData
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+            throw new Error(result.msg || 'Không thể cập nhật loại phép');
+        }
+        const labels = {annual: 'Phép năm', sick: 'Ốm', unpaid: 'KL', other: 'Khác'};
+        document.getElementById(`leaveTypeLabel${id}`).textContent = labels[select.value];
+        message.textContent = result.msg || 'Đã cập nhật loại phép';
+        message.className = 'text-success';
+    } catch (error) {
+        message.textContent = error.message;
+        message.className = 'text-danger';
+    } finally {
+        button.disabled = false;
+    }
 }
 
 function showManualCreate() {
