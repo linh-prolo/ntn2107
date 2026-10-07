@@ -36,7 +36,7 @@ try {
     $requestStmt->execute([$requestId]);
     $leave = $requestStmt->fetch(PDO::FETCH_ASSOC);
     if (!$leave) {
-        throw new RuntimeException('Không tìm thấy đơn nghỉ phép');
+        throw new DomainException('Không tìm thấy đơn nghỉ phép');
     }
     if ($leave['leave_type'] === $newLeaveType) {
         $pdo->commit();
@@ -45,19 +45,26 @@ try {
     }
 
     $periods = [];
+    $annualBalanceAffected = $leave['leave_type'] === 'annual' || $newLeaveType === 'annual';
     if ($leave['status'] === 'approved') {
         // Leave dates are the source of truth for attendance and payroll calculations.
         $periodStmt = $pdo->prepare("
             SELECT id, status
             FROM payroll_periods
-            WHERE period_from <= ? AND period_to >= ?
+            WHERE (period_from <= ? AND period_to >= ?)
+               OR (? = 1 AND period_year = ?)
             FOR UPDATE
         ");
-        $periodStmt->execute([$leave['end_date'], $leave['start_date']]);
+        $periodStmt->execute([
+            $leave['end_date'],
+            $leave['start_date'],
+            $annualBalanceAffected ? 1 : 0,
+            (int)date('Y', strtotime($leave['start_date'])),
+        ]);
         $periods = $periodStmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($periods as $period) {
             if ($period['status'] === 'locked') {
-                throw new RuntimeException('🔒 Kỳ lương liên quan đã lock, không thể đổi loại phép');
+                throw new DomainException('🔒 Kỳ lương liên quan đã lock, không thể đổi loại phép');
             }
         }
     }
@@ -71,10 +78,18 @@ try {
             FROM payroll_slips ps
             JOIN payroll_periods pp ON pp.id = ps.period_id
             WHERE ps.user_id = ?
-              AND pp.period_from <= ? AND pp.period_to >= ?
-              AND pp.status != 'locked'
+              AND (
+                    (pp.period_from <= ? AND pp.period_to >= ?)
+                    OR (? = 1 AND pp.period_year = ?)
+              )
         ");
-        $slipStmt->execute([$leave['user_id'], $leave['end_date'], $leave['start_date']]);
+        $slipStmt->execute([
+            $leave['user_id'],
+            $leave['end_date'],
+            $leave['start_date'],
+            $annualBalanceAffected ? 1 : 0,
+            (int)date('Y', strtotime($leave['start_date'])),
+        ]);
 
         $hasLumpSumColumn = (bool)$pdo->query(
             "SHOW COLUMNS FROM payroll_slips WHERE Field = 'is_lump_sum'"
@@ -102,5 +117,6 @@ try {
         $pdo->rollBack();
     }
     error_log('Update leave type failed: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'msg' => $e->getMessage()]);
+    $message = $e instanceof DomainException ? $e->getMessage() : 'Không thể cập nhật loại phép';
+    echo json_encode(['ok' => false, 'msg' => $message]);
 }

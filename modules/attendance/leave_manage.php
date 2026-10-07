@@ -6,7 +6,7 @@ requireRole('production', 'manager', 'director', 'accountant');
 
 $user = currentUser();
 $pdo = getDBConnection();
-$filter = $_GET['filter'] ?? 'pending';
+$filter = $_GET['filter'] ?? 'all';
 $month = (int)($_GET['month'] ?? date('n'));
 $year = (int)($_GET['year'] ?? date('Y'));
 if ($month < 1 || $month > 12 || $year < 2000 || $year > 2100) {
