@@ -378,8 +378,8 @@ const CHART_COLORS = ['#3B82F6','#22C55E','#FACC15','#EF4444','#8B5CF6','#F97316
 
 const LEAVE_TYPE_LABEL = {
   annual:     'Phép năm',
-  sick:       'Nghỉ ốm',
-  unpaid:     'Không phép',
+  sick:       'Nghỉ ốm (không lương)',
+  unpaid:     'Không lương',
   maternity:  'Thai sản',
   paternity:  'Nghỉ con ốm',
   other:      'Khác',

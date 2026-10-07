@@ -452,7 +452,7 @@ table.data .kpi-deduct-row td { background: #f8d7da; }
             <td class="amt"><?= number_format($s['paid_leave_days'], 1) ?> ngày</td>
         </tr>
         <tr>
-            <td class="lbl sub">(4) Nghỉ hưởng lương khác / Other paid leave</td>
+            <td class="lbl sub">(4) Nghỉ hưởng lương khác (không còn áp dụng) / Other paid leave (no longer applicable)</td>
             <td class="amt"><?= number_format($s['other_paid_leave_days'], 1) ?> ngày</td>
         </tr>
         <tr>

@@ -36,11 +36,9 @@ final class PayrollFixturePDO extends PDO
             'leave' => "SELECT COALESCE(SUM(CASE WHEN leave_type = 'annual' THEN
                 DATEDIFF(LEAST(end_date, :to1), GREATEST(start_date, :from1)) + 1
                 ELSE 0 END), 0) AS paid_leave_days,
-                COALESCE(SUM(CASE WHEN leave_type IN ('sick', 'other') THEN
+                0 AS other_paid_leave_days,
+                COALESCE(SUM(CASE WHEN leave_type IN ('sick', 'unpaid', 'other') THEN
                 DATEDIFF(LEAST(end_date, :to2), GREATEST(start_date, :from2)) + 1
-                ELSE 0 END), 0) AS other_paid_leave_days,
-                COALESCE(SUM(CASE WHEN leave_type = 'unpaid' THEN
-                DATEDIFF(LEAST(end_date, :to3), GREATEST(start_date, :from3)) + 1
                 ELSE 0 END), 0) AS unpaid_leave_days
                 FROM leave_requests WHERE user_id = :uid AND status = 'approved'
                 AND start_date <= :to4 AND end_date >= :from4",
@@ -116,7 +114,7 @@ final class PayrollFixturePDO extends PDO
             'leave' => [
                 ':uid' => 42,
                 ':from1' => $from, ':to1' => $to, ':from2' => $from, ':to2' => $to,
-                ':from3' => $from, ':to3' => $to, ':from4' => $from, ':to4' => $to,
+                ':from4' => $from, ':to4' => $to,
             ],
             'ot_meal' => [42, $from, $to, 3.0],
             default => [42, $from, $to],
@@ -129,7 +127,9 @@ final class PayrollFixturePDO extends PDO
             'profile', 'annual' => [$this->fixture['profile']],
             'salary' => $this->fixture['salary'],
             'attendance' => [$this->fixture['attendance']],
-            'leave' => [['paid_leave_days' => 0, 'other_paid_leave_days' => 0, 'unpaid_leave_days' => 0]],
+            'leave' => [$this->fixture['leaveData'] ?? [
+                'paid_leave_days' => 0, 'other_paid_leave_days' => 0, 'unpaid_leave_days' => 0,
+            ]],
             'ot' => [[
                 'ot_weekday_hours' => 0, 'ot_weekend_hours' => 0, 'ot_holiday_hours' => 0,
                 'ot_night_weekday_hours' => 0, 'ot_night_weekend_hours' => 0, 'ot_night_holiday_hours' => 0,
@@ -213,6 +213,7 @@ function payrollFixture(?int $flag = 1): array
         'bounds' => ['2026-06-01', '2026-06-30'],
         'attendance' => ['actual_workdays' => 0, 'total_late_minutes' => 0,
             'total_early_minutes' => 0, 'late_early_dates' => ''],
+        'leaveData' => ['paid_leave_days' => 0, 'other_paid_leave_days' => 0, 'unpaid_leave_days' => 0],
         'kpi' => [],
     ];
 }
@@ -321,7 +322,6 @@ $tests['lump sum suppresses late and KPI deductions but preserves KPI bonus'] = 
 };
 
 foreach ([
-    'mid-period joining' => ['2026-06-16', null, '2026-06-16', '2026-06-30', 13],
     'mid-period resignation' => ['2025-01-01', '2026-06-15', '2026-06-01', '2026-06-15', 13],
     'joining and resignation' => ['2026-06-10', '2026-06-20', '2026-06-10', '2026-06-20', 10],
 ] as $name => [$joined, $resigned, $from, $to, $days]) {
@@ -332,14 +332,59 @@ foreach ([
         $fixture['bounds'] = [$from, $to];
         [$result, $engine] = payrollCalculate($fixture);
         payrollEqual($days, $engine->calcWorkingDays($from, $fixture['period']['period_to'], $resigned), 'calendar days');
-        payrollEqual($days, $result['working_days_standard'], 'employment-bounded standard days');
+        payrollEqual(26, $result['working_days_standard'], 'monthly standard days');
         payrollEqual($days, $result['total_paid_days'], 'employment-bounded paid days');
-        payrollFullContract($result);
+        payrollEqual(round(20_000_000 * $days / 26), $result['basic_salary_received'], 'basic salary prorated against monthly standard');
         if ($resigned !== null) {
-            payrollEqual(3_000_000, $result['pit_amount'], 'resignation PIT');
+            payrollEqual(round($result['gross_salary'] * 0.10), $result['pit_amount'], 'resignation PIT');
         }
     };
 }
+
+$tests['mid-period lump sum employee is prorated against monthly standard'] = static function (): void {
+    $fixture = payrollFixture();
+    $fixture['profile']['date_joined'] = '2026-06-16';
+    $fixture['bounds'] = ['2026-06-16', '2026-06-30'];
+    [$result] = payrollCalculate($fixture);
+    payrollEqual(26, $result['working_days_standard'], 'monthly standard days');
+    payrollEqual(13, $result['total_paid_days'], 'employment days paid');
+    payrollEqual(round(20_000_000 * 13 / 26), $result['basic_salary_received'], 'half-month basic salary');
+    payrollEqual(round(1_000_000 * 13 / 26), $result['meal_received'], 'lump sum allowance prorated');
+    payrollEqual(0, $result['attendance_bonus_eligible'], 'mid-month hire is not eligible for attendance bonus');
+};
+
+$tests['mid-period ordinary employee is prorated against monthly standard'] = static function (): void {
+    $fixture = payrollFixture(0);
+    $fixture['profile']['date_joined'] = '2026-06-10';
+    $fixture['bounds'] = ['2026-06-10', '2026-06-30'];
+    $fixture['attendance']['actual_workdays'] = 18;
+    [$result] = payrollCalculate($fixture);
+    payrollEqual(26, $result['working_days_standard'], 'monthly standard days');
+    payrollEqual(18, $result['total_paid_days'], 'actual paid days');
+    payrollEqual(round(20_000_000 * 18 / 26), $result['basic_salary_received'], 'basic salary prorated against monthly standard');
+    payrollEqual(0, $result['attendance_bonus_eligible'], 'mid-month hire is not eligible for attendance bonus');
+};
+
+$tests['sick and other leave are unpaid'] = static function (): void {
+    $fixture = payrollFixture(0);
+    $fixture['attendance']['actual_workdays'] = 12;
+    $fixture['leaveData'] = ['paid_leave_days' => 0, 'other_paid_leave_days' => 0, 'unpaid_leave_days' => 3];
+    [$result] = payrollCalculate($fixture);
+    payrollEqual(3, $result['unpaid_leave_days'], 'unpaid sick/other leave days');
+    payrollEqual(0, $result['other_paid_leave_days'], 'other paid leave compatibility field');
+    payrollEqual(12, $result['total_paid_days'], 'sick/other leave excluded from paid days');
+    payrollEqual(true, str_contains($result['remark'], 'Không có chuyên cần: nghỉ không lương 3 ngày'),
+        'unpaid leave attendance note');
+};
+
+$tests['annual leave remains paid'] = static function (): void {
+    $fixture = payrollFixture(0);
+    $fixture['attendance']['actual_workdays'] = 12;
+    $fixture['leaveData'] = ['paid_leave_days' => 2, 'other_paid_leave_days' => 0, 'unpaid_leave_days' => 0];
+    [$result] = payrollCalculate($fixture);
+    payrollEqual(14, $result['total_paid_days'], 'annual leave included in paid days');
+    payrollEqual(round(20_000_000 * 14 / 26), $result['basic_salary_received'], 'annual leave remains paid');
+};
 
 foreach ([
     'joined after period' => ['2026-07-01', null],
@@ -350,8 +395,9 @@ foreach ([
         $fixture['profile']['date_joined'] = $joined;
         $fixture['profile']['resignation_date'] = $resigned;
         [$result, , $pdo] = payrollCalculate($fixture);
-        foreach (['working_days_standard', 'total_paid_days', 'basic_salary_received',
-            'meal_received', 'attendance_bonus', 'kpi_bonus', 'gross_salary', 'net_salary'] as $field) {
+        payrollEqual(26, $result['working_days_standard'], 'monthly standard days even outside employment');
+        foreach (['total_paid_days', 'basic_salary_received', 'meal_received', 'attendance_bonus',
+            'kpi_bonus', 'gross_salary', 'net_salary'] as $field) {
             payrollEqual(0, $result[$field], $field);
         }
         payrollEqual(['period', 'profile', 'salary', 'annual', 'used'], $pdo->executed, 'no queries outside employment');
@@ -388,10 +434,10 @@ $tests['resignation PIT and social insurance retain existing rules'] = static fu
         payrollEqual($result['gross_salary'] - $result['si_employee'] - $result['pit_amount'],
             $result['net_salary'], 'net after SI and resignation PIT');
     }
-    payrollEqual(29_000_000, $ordinary['gross_salary'], 'ordinary meals remain unpaid');
-    payrollEqual(30_000_000, $lump['gross_salary'], 'lump sum contractual meals');
-    payrollEqual(2_900_000, $ordinary['pit_amount'], 'ordinary resignation PIT');
-    payrollEqual(3_000_000, $lump['pit_amount'], 'lump sum resignation PIT');
+    payrollEqual(14_000_000, $ordinary['gross_salary'], 'ordinary salary prorated against full-month standard');
+    payrollEqual(14_500_000, $lump['gross_salary'], 'lump sum salary and contractual meals prorated');
+    payrollEqual(1_400_000, $ordinary['pit_amount'], 'ordinary resignation PIT');
+    payrollEqual(1_450_000, $lump['pit_amount'], 'lump sum resignation PIT');
     payrollEqual($ordinary['si_employee'], $lump['si_employee'], 'SI unchanged by lump sum');
 };
 
