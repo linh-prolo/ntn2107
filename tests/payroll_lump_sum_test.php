@@ -395,6 +395,77 @@ $tests['resignation PIT and social insurance retain existing rules'] = static fu
     payrollEqual($ordinary['si_employee'], $lump['si_employee'], 'SI unchanged by lump sum');
 };
 
+$tests['shared totals match unchanged engine totals'] = static function (): void {
+    foreach ([null, 0, 1] as $flag) {
+        foreach ([payrollFixture($flag), payrollPenaltyFixture($flag)] as $fixture) {
+            [$result] = payrollCalculate($fixture);
+            foreach (PayrollEngine::calculateSlipTotals($result) as $field => $value) {
+                payrollEqual($result[$field], $value, "engine parity: $field");
+            }
+        }
+    }
+};
+
+$tests['manual income replaces engine income and advance reduces net'] = static function (): void {
+    [$data] = payrollCalculate(payrollFixture(1));
+    foreach ([
+        ['advance_payment' => 3_000_000],
+        ['other_income' => 19_725_000],
+        ['other_income' => 19_725_000, 'advance_payment' => 3_000_000,
+            'performance_bonus' => 2_000_000, 'other_bonus' => 500_000,
+            'adjustment' => -250_000, 'annual_leave_payout' => 750_000,
+            'pit_adjustment' => 100_000],
+        ['other_income' => 0, 'performance_bonus' => 0],
+    ] as $manual) {
+        $gross = $data['gross_salary'];
+        foreach (['other_income', 'performance_bonus', 'other_bonus',
+            'adjustment', 'annual_leave_payout'] as $field) {
+            if (array_key_exists($field, $manual)) {
+                $gross += $manual[$field] - $data[$field];
+            }
+        }
+        $merged = array_replace($data, $manual);
+        $totals = PayrollEngine::calculateSlipTotals($merged);
+        payrollEqual($gross, $totals['gross_salary'], 'gross uses manual-minus-engine difference');
+        $net = max(0, round($gross - $data['si_employee'] - $data['pit_amount']
+            - $merged['pit_adjustment'] - $data['late_deduction']
+            - $data['kpi_deduction'] - $merged['advance_payment']));
+        payrollEqual($net, $totals['net_salary'], 'net includes preserved advance and PIT adjustment');
+        payrollEqual($net, $totals['bank_transfer'], 'bank equals net');
+        payrollEqual($totals, PayrollEngine::calculateSlipTotals(array_replace($merged, $totals)),
+            'saving unchanged recalculated slip keeps totals');
+    }
+};
+
+$tests['shared totals include OT meals night shifts KPI and contractual meals'] = static function (): void {
+    [$data] = payrollCalculate(payrollFixture(1));
+    $slip = array_replace($data, [
+        'ot_meal_bonus' => 90_000, 'night_shift_bonus' => 600_000,
+        'kpi_bonus' => 300_000, 'annual_leave_payout' => 150_000,
+        'si_employee' => 2_257_500, 'pit_amount' => 500_000,
+        'pit_adjustment' => 100_000, 'late_deduction' => 50_000,
+        'kpi_deduction' => 200_000, 'advance_payment' => 3_000_000,
+    ]);
+    $totals = PayrollEngine::calculateSlipTotals($slip);
+    payrollEqual(31_140_000, $totals['gross_salary'], 'all automatic earnings included once');
+    payrollEqual(25_032_500, $totals['net_salary'], 'all deductions included once');
+    payrollEqual($totals['net_salary'], $totals['bank_transfer'], 'bank equals net');
+};
+
+$tests['shared totals round net before clamping and tolerate missing optional fields'] = static function (): void {
+    $totals = PayrollEngine::calculateSlipTotals([
+        'basic_salary_received' => '100.4', 'adjustment' => '-0.1',
+        'pit_adjustment' => '-0.3', 'advance_payment' => '10',
+    ]);
+    payrollEqual(100, $totals['gross_salary'], 'gross rounded');
+    payrollEqual(91, $totals['net_salary'], 'net rounds unrounded gross minus deductions');
+    $totals = PayrollEngine::calculateSlipTotals([
+        'basic_salary_received' => 100, 'advance_payment' => 3_000_000,
+    ]);
+    payrollEqual(0, $totals['net_salary'], 'advance cannot make net negative');
+    payrollEqual(0, $totals['bank_transfer'], 'bank cannot be negative');
+};
+
 $failed = 0;
 foreach ($tests as $name => $test) {
     try {

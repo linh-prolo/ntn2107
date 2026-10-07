@@ -62,7 +62,7 @@ foreach ($users as $uid) {
         }
 
         // Kiểm tra slip đã tồn tại chưa
-        $chk = $pdo->prepare("SELECT id, manually_adjusted FROM payroll_slips WHERE period_id = ? AND user_id = ?");
+        $chk = $pdo->prepare("SELECT * FROM payroll_slips WHERE period_id = ? AND user_id = ?");
         $chk->execute([$periodId, $uid]);
         $slip = $chk->fetch();
 
@@ -75,6 +75,9 @@ foreach ($users as $uid) {
                     'annual_leave_payout', 'pit_adjustment',
                 ];
                 $autoFields = array_diff_key($data, array_flip($keepFields));
+                // Thay giá trị engine bằng khoản tay, không cộng trùng các khoản đã có trong gross.
+                $mergedSlip = array_replace($data, array_intersect_key($slip, array_flip($keepFields)));
+                $autoFields = array_replace($autoFields, PayrollEngine::calculateSlipTotals($mergedSlip));
                 $set = implode('=?, ', array_keys($autoFields)) . '=?';
                 $pdo->prepare("UPDATE payroll_slips SET $set WHERE id = ?")
                     ->execute(array_merge(array_values($autoFields), [$slip['id']]));

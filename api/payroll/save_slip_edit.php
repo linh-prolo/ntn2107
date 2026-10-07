@@ -2,6 +2,7 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/database.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/config/functions.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/erp/modules/payroll/engine/PayrollEngine.php';
 requireLoginApi();
 requireRoleApi('director', 'accountant');
 
@@ -51,34 +52,16 @@ $pitAdjustment   = (float)($_POST['pit_adjustment']    ?? $slip['pit_adjustment'
 $remark          = trim($_POST['remark']               ?? $slip['remark']);
 
 // Tính lại gross & net
-$gross = (float)$slip['basic_salary_received']
-       + (float)($slip['meal_received'] ?? 0)
-       + (float)($slip['clothes_received'] ?? 0)
-       + (float)($slip['phone_received'] ?? 0)
-       + (float)($slip['transport_received'] ?? 0)
-       + (float)($slip['housing_received'] ?? 0)
-       + $responsibility
-       + $seniority
-       + (float)($slip['night_shift_bonus'] ?? 0)
-       + (float)($slip['attendance_bonus'] ?? 0)
-       + (float)($slip['total_ot_amount'] ?? 0)
-       + (float)($slip['kpi_bonus'] ?? 0)
-       + (float)($slip['annual_leave_payout'] ?? 0)
-       + $otherIncome
-       + $perfBonus
-       + $otherBonus
-       + $adjustment;
-
-$net = $gross
-     - (float)$slip['si_employee']
-     - (float)$slip['pit_amount']
-     - $pitAdjustment
-     - (float)$slip['late_deduction']
-     - (float)$slip['kpi_deduction']
-     - $advancePayment;
-
-$net  = max(0, round($net));
-$bank = $net;
+$totals = PayrollEngine::calculateSlipTotals(array_replace($slip, [
+    'other_income' => $otherIncome,
+    'performance_bonus' => $perfBonus,
+    'other_bonus' => $otherBonus,
+    'adjustment' => $adjustment,
+    'responsibility_allowance_received' => $responsibility,
+    'seniority_allowance_received' => $seniority,
+    'advance_payment' => $advancePayment,
+    'pit_adjustment' => $pitAdjustment,
+]));
 
 try {
     $pdo->prepare("
@@ -103,7 +86,7 @@ try {
         $adjustment, $responsibility, $seniority,
         $advancePayment, $pitAdjustment,
         $remark,
-        round($gross), $net, $bank,
+        $totals['gross_salary'], $totals['net_salary'], $totals['bank_transfer'],
         $slipId
     ]);
 
