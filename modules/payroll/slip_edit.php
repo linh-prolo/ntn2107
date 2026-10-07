@@ -571,6 +571,7 @@ const BASE = {
     transport        : <?= (float)$slip['transport_received'] ?>,
     housing          : <?= (float)($slip['housing_received'] ?? 0) ?>,
     ot_meal          : <?= (float)($slip['ot_meal_bonus'] ?? 0) ?>,
+    night_shift      : <?= (float)($slip['night_shift_bonus'] ?? 0) ?>,
     responsibility   : <?= (float)($slip['responsibility_allowance_received'] ?? 0) ?>,
     seniority        : <?= (float)($slip['seniority_allowance_received'] ?? 0) ?>,
     other_income     : <?= (float)$slip['other_income'] ?>,
@@ -599,7 +600,7 @@ function recalc() {
     const gross = BASE.basic_received
                 + BASE.meal + BASE.clothes + BASE.phone + BASE.transport + BASE.housing + BASE.ot_meal
                 + BASE.responsibility + BASE.seniority
-                + BASE.attendance_bonus + BASE.ot + BASE.kpi_bonus
+                + BASE.night_shift + BASE.attendance_bonus + BASE.ot + BASE.kpi_bonus
                 + BASE.annual_leave
                 + otherIncome + perfBonus + otherBonus + adjustment;
 

@@ -62,19 +62,14 @@ foreach ($users as $uid) {
         }
 
         // Kiểm tra slip đã tồn tại chưa
-        $chk = $pdo->prepare("SELECT id, manually_adjusted FROM payroll_slips WHERE period_id = ? AND user_id = ?");
+        $chk = $pdo->prepare("SELECT * FROM payroll_slips WHERE period_id = ? AND user_id = ?");
         $chk->execute([$periodId, $uid]);
         $slip = $chk->fetch();
 
         if ($slip) {
             if ($slip['manually_adjusted']) {
                 // Giữ lại phần KT nhập tay
-                $keepFields = [
-                    'other_income', 'adjustment', 'other_bonus',
-                    'advance_payment', 'remark', 'performance_bonus',
-                    'annual_leave_payout', 'pit_adjustment',
-                ];
-                $autoFields = array_diff_key($data, array_flip($keepFields));
+                $autoFields = PayrollEngine::calculateAdjustedFields($data, $slip);
                 $set = implode('=?, ', array_keys($autoFields)) . '=?';
                 $pdo->prepare("UPDATE payroll_slips SET $set WHERE id = ?")
                     ->execute(array_merge(array_values($autoFields), [$slip['id']]));
