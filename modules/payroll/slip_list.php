@@ -257,7 +257,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <th class="grp-bonus">🌙 Phụ trội đêm</th>
                     <th class="grp-kpi text-success">Thưởng KPI</th>
                     <th class="grp-kpi text-danger">Trừ KPI</th>
-                    <th class="grp-leave">Có lương</th>
+                    <th class="grp-leave">Phép năm</th>
                     <th class="grp-leave">Không lương</th>
                     <th class="grp-deduct">BHXH</th>
                     <th class="grp-deduct">Thuế TNCN</th>
@@ -270,7 +270,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
             </thead>
             <tbody>
             <?php foreach ($slips as $i => $s):
-                $paidLeave    = (float)$s['paid_leave_days'] + (float)$s['other_paid_leave_days'];
+                $paidLeave    = (float)$s['paid_leave_days'];
                 $rowKpiBonus  = (float)($s['kpi_bonus']     ?? 0);
                 $rowKpiDeduct = (float)($s['kpi_deduction'] ?? 0);
                 $rowClass     = $s['is_late_warning'] ? 'row-warning' : ($i % 2 === 0 ? '' : 'row-alt');

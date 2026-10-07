@@ -204,7 +204,8 @@ class PayrollEngine
         $employmentFrom = max($period['period_from'], $profile['date_joined'] ?? $period['period_from']);
         $employmentTo   = min($period['period_to'], $hasResignation ? $profile['resignation_date'] : $period['period_to']);
         $hasActivePeriod = $employmentFrom <= $employmentTo;
-        $workingDays = $hasActivePeriod
+        $workingDays = $this->calcWorkingDays($period['period_from'], $period['period_to']);
+        $employmentDays = $hasActivePeriod
             ? $this->calcWorkingDays($employmentFrom, $employmentTo)
             : 0;
 
@@ -274,10 +275,10 @@ class PayrollEngine
 
 
 
-        $totalPaidDays = $actualWorkdays + $paidLeaveDays + $otherPaidLeaveDays + $holidayPaidDays;
+        $totalPaidDays = $actualWorkdays + $paidLeaveDays + $holidayPaidDays;
 
         if ($isLumpSum) {
-            $totalPaidDays     = $workingDays;
+            $totalPaidDays     = $employmentDays;
             $totalLateMinutes  = 0;
             $totalEarlyMinutes = 0;
             $lateMinutes       = 0;
@@ -582,7 +583,7 @@ class PayrollEngine
 
                 ? "Không có chuyên cần: bị trừ KPI"
 
-                : "Không có chuyên cần: nghỉ không phép {$unpaidLeaveDays} ngày";
+                : "Không có chuyên cần: nghỉ không lương {$unpaidLeaveDays} ngày";
 
         if ($hasInsurance)
 
@@ -1196,21 +1197,13 @@ class PayrollEngine
 
                     ), 0) AS paid_leave_days,
 
+                    0 AS other_paid_leave_days,
+
                     COALESCE(SUM(
 
-                        CASE WHEN leave_type IN ('sick', 'other') THEN
+                        CASE WHEN leave_type IN ('sick', 'unpaid', 'other') THEN
 
                             DATEDIFF(LEAST(end_date, :to2), GREATEST(start_date, :from2)) + 1
-
-                        ELSE 0 END
-
-                    ), 0) AS other_paid_leave_days,
-
-                    COALESCE(SUM(
-
-                        CASE WHEN leave_type = 'unpaid' THEN
-
-                            DATEDIFF(LEAST(end_date, :to3), GREATEST(start_date, :from3)) + 1
 
                         ELSE 0 END
 
@@ -1235,8 +1228,6 @@ class PayrollEngine
                 ':from1' => $from, ':to1' => $to,
 
                 ':from2' => $from, ':to2' => $to,
-
-                ':from3' => $from, ':to3' => $to,
 
                 ':from4' => $from, ':to4' => $to,
 

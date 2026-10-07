@@ -157,7 +157,7 @@ $headers = [
     'D'  => 'Phòng ban',
     // Ngày công
     'E'  => 'Thực tế',
-    'F'  => 'Nghỉ CL',
+    'F'  => 'Phép năm',
     'G'  => 'Nghỉ KL',
     // Lương & OT
     'H'  => 'Lương CB',
@@ -226,7 +226,7 @@ $totalCols = array_fill_keys($moneyCols, 0);
 
 $row = 5;
 foreach ($slips as $i => $s) {
-    $paidLeave = (float)$s['paid_leave_days'] + (float)$s['other_paid_leave_days'];
+    $paidLeave = (float)$s['paid_leave_days'];
     $bgColor   = ($i % 2 === 0) ? 'f8f9fa' : 'ffffff';
 
     $data = [

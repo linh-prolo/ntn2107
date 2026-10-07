@@ -251,7 +251,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <td class="text-end"><?= number_format($slipDetail['paid_leave_days'], 2) ?></td>
                         </tr>
                         <tr>
-                            <td class="text-muted small">(10) Số ngày nghỉ hưởng lương khác / Other paid leaves</td>
+                            <td class="text-muted small">(10) Số ngày nghỉ hưởng lương khác (không còn áp dụng) / Other paid leaves (no longer applicable)</td>
                             <td class="text-end"><?= number_format($slipDetail['other_paid_leave_days'], 2) ?></td>
                         </tr>
                         <tr>
