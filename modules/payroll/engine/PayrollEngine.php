@@ -6,6 +6,20 @@ class PayrollEngine
 
     private PDO $pdo;
 
+    public static function calculateAdjustedFields(array $data, array $slip): array
+    {
+        $keepFields = array_flip([
+            'other_income', 'adjustment', 'other_bonus',
+            'advance_payment', 'remark', 'performance_bonus',
+            'annual_leave_payout', 'pit_adjustment', 'manually_adjusted',
+        ]);
+        $autoFields = array_diff_key($data, $keepFields);
+        // Thay giá trị engine bằng khoản tay, không cộng trùng các khoản đã có trong gross.
+        $mergedSlip = array_replace($data, array_intersect_key($slip, $keepFields));
+
+        return array_replace($autoFields, self::calculateSlipTotals($mergedSlip));
+    }
+
     public static function calculateSlipTotals(array $slip): array
     {
         $gross = 0;

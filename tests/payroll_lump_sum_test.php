@@ -425,7 +425,8 @@ $tests['manual income replaces engine income and advance reduces net'] = static 
             }
         }
         $merged = array_replace($data, $manual);
-        $totals = PayrollEngine::calculateSlipTotals($merged);
+        $updated = PayrollEngine::calculateAdjustedFields($data, $merged);
+        $totals = array_intersect_key($updated, array_flip(['gross_salary', 'net_salary', 'bank_transfer']));
         payrollEqual($gross, $totals['gross_salary'], 'gross uses manual-minus-engine difference');
         $net = max(0, round($gross - $data['si_employee'] - $data['pit_amount']
             - $merged['pit_adjustment'] - $data['late_deduction']
@@ -434,6 +435,34 @@ $tests['manual income replaces engine income and advance reduces net'] = static 
         payrollEqual($net, $totals['bank_transfer'], 'bank equals net');
         payrollEqual($totals, PayrollEngine::calculateSlipTotals(array_replace($merged, $totals)),
             'saving unchanged recalculated slip keeps totals');
+    }
+};
+
+$tests['repeated recalculation preserves manual flag and values but refreshes automatic fields'] = static function (): void {
+    [$data] = payrollCalculate(payrollFixture(1));
+    $manual = [
+        'other_income' => 19_725_000, 'performance_bonus' => 2_000_000,
+        'other_bonus' => 500_000, 'adjustment' => -250_000,
+        'annual_leave_payout' => 750_000, 'advance_payment' => 3_000_000,
+        'pit_adjustment' => 100_000, 'remark' => 'Giữ khoản tay', 'manually_adjusted' => 1,
+    ];
+    $slip = array_replace($data, $manual, ['basic_salary_received' => 1, 'gross_salary' => 1]);
+    foreach ([90_000, 120_000] as $otMealBonus) {
+        $fresh = array_replace($data, ['ot_meal_bonus' => $otMealBonus]);
+        $updates = PayrollEngine::calculateAdjustedFields($fresh, $slip);
+        foreach ($manual as $field => $value) {
+            payrollEqual(false, array_key_exists($field, $updates), "$field excluded from automatic updates");
+        }
+        $slip = array_replace($slip, $updates);
+        foreach ($manual as $field => $value) {
+            payrollEqual($value, $slip[$field], "$field survives recalculation");
+        }
+        payrollEqual($fresh['basic_salary_received'], $slip['basic_salary_received'], 'basic salary refreshed');
+        payrollEqual($otMealBonus, $slip['ot_meal_bonus'], 'OT meals refreshed');
+        payrollEqual(50_225_000 + $otMealBonus, $slip['gross_salary'], 'new gross replaces stale total');
+        payrollEqual(PayrollEngine::calculateSlipTotals($slip),
+            array_intersect_key($updates, array_flip(['gross_salary', 'net_salary', 'bank_transfer'])),
+            'saving after recalculation keeps totals');
     }
 };
 

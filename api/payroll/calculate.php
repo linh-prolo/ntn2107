@@ -69,15 +69,7 @@ foreach ($users as $uid) {
         if ($slip) {
             if ($slip['manually_adjusted']) {
                 // Giữ lại phần KT nhập tay
-                $keepFields = [
-                    'other_income', 'adjustment', 'other_bonus',
-                    'advance_payment', 'remark', 'performance_bonus',
-                    'annual_leave_payout', 'pit_adjustment',
-                ];
-                $autoFields = array_diff_key($data, array_flip($keepFields));
-                // Thay giá trị engine bằng khoản tay, không cộng trùng các khoản đã có trong gross.
-                $mergedSlip = array_replace($data, array_intersect_key($slip, array_flip($keepFields)));
-                $autoFields = array_replace($autoFields, PayrollEngine::calculateSlipTotals($mergedSlip));
+                $autoFields = PayrollEngine::calculateAdjustedFields($data, $slip);
                 $set = implode('=?, ', array_keys($autoFields)) . '=?';
                 $pdo->prepare("UPDATE payroll_slips SET $set WHERE id = ?")
                     ->execute(array_merge(array_values($autoFields), [$slip['id']]));
