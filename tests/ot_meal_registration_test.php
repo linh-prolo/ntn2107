@@ -82,10 +82,22 @@ foreach ([
 
 $source = file_get_contents(__DIR__ . '/../modules/attendance/ot_manage.php');
 if (!preg_match('/if \(\$action === \'director_edit_hours\'\).*?(?=\/\/ ── Duyệt 1 đơn)/s', $source, $editHours)
-    || !preg_match_all('/UPDATE overtime_requests SET .*?WHERE id = \?/s', $editHours[0], $updates)) {
+    || !preg_match_all('/UPDATE overtime_requests SET .*?WHERE id = \?/s', $editHours[0], $updates)
+    || !preg_match('/if \((!in_array\(\$otMealRegistered, \[\'0\', \'1\'\], true\))\) \{/', $editHours[0], $editValidation)) {
     throw new RuntimeException('Director edit: missing hours update SQL');
 }
 mealRegistrationEqual(1, count($updates[0]), 'Director edit hours update count');
-mealRegistrationEqual(false, str_contains($updates[0][0], 'ot_meal_registered'), 'Director edit preserves stored meal');
+mealRegistrationEqual(true, str_contains($updates[0][0], 'ot_meal_registered = ?'), 'Director edit updates meal registration');
+mealRegistrationEqual(true, str_contains($editHours[0], 'SELECT user_id, ot_date, status, ot_meal_registered'), 'Director edit reads stored meal registration');
+foreach (['0', '1', '', null, '2', 'yes', 0, 1, ['1']] as $value) {
+    $otMealRegistered = $value;
+    eval('$editValidationFailed = ' . $editValidation[1] . ';');
+    mealRegistrationEqual(!in_array($value, ['0', '1'], true), $editValidationFailed, 'Director edit meal validation');
+}
+mealRegistrationEqual(3, substr_count($source, 'htmlspecialchars(json_encode((string)($ot["ot_meal_registered"] ?? 0)), ENT_QUOTES, "UTF-8")'), 'Director edit buttons pass existing meal registration');
+mealRegistrationEqual(true, str_contains($source, 'function showEditHours(id, name, startTime, endTime, hours, otType, otMealRegistered)'), 'Director edit JS receives meal registration');
+mealRegistrationEqual(true, str_contains($source, "document.getElementById('editHoursMeal').value = String(otMealRegistered ?? 0);"), 'Director edit JS selects existing meal registration');
+mealRegistrationEqual(true, str_contains($source, 'if ((int)$otRow[\'ot_meal_registered\'] !== (int)$otMealRegistered)'), 'Director edit only notifies on meal changes');
+mealRegistrationEqual(true, str_contains($source, 'Đăng ký ăn tăng ca: '), 'Director edit notification includes changed meal');
 
 echo "OT meal registration checks passed.\n";
