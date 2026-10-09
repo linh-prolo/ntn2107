@@ -21,6 +21,10 @@ final class PayrollFixturePDO extends PDO
 
     public function prepare(string $query, array $options = []): PDOStatement|false
     {
+        $holidays = $this->fixture['holidays'] ?? [];
+        $holidayList = $holidays
+            ? implode(',', array_map(fn(string $date) => $this->quote($date), $holidays))
+            : "'0000-00-00'";
         // Exact whitelist: unknown SQL must fail even when the engine catches Throwable.
         $queries = [
             'period' => 'SELECT * FROM payroll_periods WHERE id = ?',
@@ -64,14 +68,19 @@ final class PayrollFixturePDO extends PDO
                 FROM employee_shifts es JOIN work_shifts ws ON es.shift_id = ws.id
                 WHERE es.user_id = :uid AND ws.is_night_shift = 1 AND es.effective_date <= :to2
                 AND (es.end_date IS NULL OR es.end_date >= :from1) ORDER BY es.effective_date ASC',
-            'ot_meal' => "SELECT COUNT(*) AS meal_days FROM (
-                SELECT ot_date, SUM(hours) AS total_hours FROM overtime_requests
+            'ot_meal' => "SELECT
+                COALESCE(SUM(CASE WHEN total_hours >= ? AND meal_registered = 0 THEN 1 ELSE 0 END), 0) AS bonus_days,
+                COALESCE(SUM(CASE WHEN total_hours < ? AND meal_registered = 1 THEN 1 ELSE 0 END), 0) AS deduct_days
+                FROM (
+                SELECT ot_date, SUM(hours) AS total_hours,
+                    MAX(CASE WHEN ot_meal_registered = 1 THEN 1 ELSE 0 END) AS meal_registered
+                FROM overtime_requests
                 WHERE user_id = ? AND status = 'approved' AND ot_date BETWEEN ? AND ?
-                AND DAYOFWEEK(ot_date) != 1 AND ot_date NOT IN ('0000-00-00')
-                GROUP BY ot_date HAVING total_hours >= ?) AS daily_ot",
+                AND DAYOFWEEK(ot_date) != 1 AND ot_date NOT IN ($holidayList)
+                GROUP BY ot_date) AS daily_ot",
         ];
         $nonHoliday = empty($this->fixture['profile']['resignation_date'])
-            ? " AND work_date NOT IN ('0000-00-00')" : '';
+            ? " AND work_date NOT IN ($holidayList)" : '';
         $queries['attendance'] = "SELECT COUNT(CASE WHEN check_in IS NOT NULL
             AND DAYOFWEEK(work_date) != 1 $nonHoliday THEN 1 END) AS actual_workdays,
             COALESCE(SUM(CASE WHEN is_late = 1 AND DAYOFWEEK(work_date) != 1
@@ -100,6 +109,54 @@ final class PayrollFixturePDO extends PDO
         throw new RuntimeException($message);
     }
 
+    public function quote(string $string, int $type = PDO::PARAM_STR): string|false
+    {
+        return "'" . str_replace("'", "''", $string) . "'";
+    }
+
+    private function otMealSummary(): array
+    {
+        [$from, $to] = $this->fixture['bounds'];
+        $days = [];
+        foreach ($this->fixture['overtime'] ?? [] as $request) {
+            $date = $request['ot_date'];
+            if (($request['user_id'] ?? 42) !== 42 || $request['status'] !== 'approved'
+                || $date < $from || $date > $to || (int)(new DateTime($date))->format('N') === 7
+                || in_array($date, $this->fixture['holidays'] ?? [], true)) {
+                continue;
+            }
+            $days[$date]['hours'] = ($days[$date]['hours'] ?? 0) + $request['hours'];
+            $days[$date]['meal'] = ($days[$date]['meal'] ?? false)
+                || (int)($request['ot_meal_registered'] ?? 0) === 1;
+        }
+        $summary = ['bonus_days' => 0, 'deduct_days' => 0];
+        foreach ($days as $day) {
+            if ($day['hours'] >= PayrollEngine::OT_MEAL_MIN_HOURS && !$day['meal']) {
+                $summary['bonus_days']++;
+            } elseif ($day['hours'] < PayrollEngine::OT_MEAL_MIN_HOURS && $day['meal']) {
+                $summary['deduct_days']++;
+            }
+        }
+        return $summary;
+    }
+
+    private function otHours(): array
+    {
+        $hours = array_fill_keys([
+            'ot_weekday_hours', 'ot_weekend_hours', 'ot_holiday_hours',
+            'ot_night_weekday_hours', 'ot_night_weekend_hours', 'ot_night_holiday_hours',
+        ], 0);
+        [$from, $to] = $this->fixture['bounds'];
+        foreach ($this->fixture['overtime'] ?? [] as $request) {
+            if (($request['user_id'] ?? 42) === 42 && $request['status'] === 'approved'
+                && $request['ot_date'] >= $from && $request['ot_date'] <= $to) {
+                $field = 'ot_' . ($request['ot_type'] ?? 'weekday') . '_hours';
+                $hours[$field] += $request['hours'];
+            }
+        }
+        return $hours;
+    }
+
     public function rows(string $kind, ?array $params): array
     {
         $this->executed[] = $kind;
@@ -116,7 +173,7 @@ final class PayrollFixturePDO extends PDO
                 ':from1' => $from, ':to1' => $to, ':from2' => $from, ':to2' => $to,
                 ':from4' => $from, ':to4' => $to,
             ],
-            'ot_meal' => [42, $from, $to, 3.0],
+            'ot_meal' => [3.0, 3.0, 42, $from, $to],
             default => [42, $from, $to],
         };
         if ($params !== $expected) {
@@ -130,13 +187,12 @@ final class PayrollFixturePDO extends PDO
             'leave' => [$this->fixture['leaveData'] ?? [
                 'paid_leave_days' => 0, 'other_paid_leave_days' => 0, 'unpaid_leave_days' => 0,
             ]],
-            'ot' => [[
-                'ot_weekday_hours' => 0, 'ot_weekend_hours' => 0, 'ot_holiday_hours' => 0,
-                'ot_night_weekday_hours' => 0, 'ot_night_weekend_hours' => 0, 'ot_night_holiday_hours' => 0,
-            ]],
+            'ot' => [$this->otHours()],
             'kpi' => $this->fixture['kpi'],
-            'used', 'night', 'ot_meal' => [[0]],
-            'holidays', 'night_ranges' => [],
+            'ot_meal' => [$this->otMealSummary()],
+            'used', 'night' => [[0]],
+            'holidays' => array_map(static fn(string $date) => [$date], $this->fixture['holidays'] ?? []),
+            'night_ranges' => [],
         };
     }
 }
@@ -270,7 +326,8 @@ foreach (['missing' => null, 'zero' => 0] as $name => $flag) {
     $tests["ordinary flag $name, no attendance"] = static function () use ($flag): void {
         [$result] = payrollCalculate(payrollFixture($flag));
         foreach (['is_lump_sum', 'total_paid_days', 'basic_salary_received', 'meal_received',
-            'attendance_bonus', 'gross_salary', 'net_salary'] as $field) {
+            'attendance_bonus', 'gross_salary', 'net_salary', 'ot_meal_days',
+            'ot_meal_bonus', 'ot_meal_deduct_days', 'ot_meal_deduction'] as $field) {
             payrollEqual(0, $result[$field], $field);
         }
         payrollEqual(26, $result['working_days_standard'], 'standard days');
@@ -397,7 +454,8 @@ foreach ([
         [$result, , $pdo] = payrollCalculate($fixture);
         payrollEqual(26, $result['working_days_standard'], 'monthly standard days even outside employment');
         foreach (['total_paid_days', 'basic_salary_received', 'meal_received', 'attendance_bonus',
-            'kpi_bonus', 'gross_salary', 'net_salary'] as $field) {
+            'kpi_bonus', 'gross_salary', 'net_salary', 'ot_meal_days', 'ot_meal_bonus',
+            'ot_meal_deduct_days', 'ot_meal_deduction'] as $field) {
             payrollEqual(0, $result[$field], $field);
         }
         payrollEqual(['period', 'profile', 'salary', 'annual', 'used'], $pdo->executed, 'no queries outside employment');
@@ -493,8 +551,11 @@ $tests['repeated recalculation preserves manual flag and values but refreshes au
         'pit_adjustment' => 100_000, 'remark' => 'Giữ khoản tay', 'manually_adjusted' => 1,
     ];
     $slip = array_replace($data, $manual, ['basic_salary_received' => 1, 'gross_salary' => 1]);
-    foreach ([90_000, 120_000] as $otMealBonus) {
-        $fresh = array_replace($data, ['ot_meal_bonus' => $otMealBonus]);
+    foreach ([[90_000, 30_000, 1], [120_000, 60_000, 2], [0, 0, 0]] as [$otMealBonus, $otMealDeduction, $deductDays]) {
+        $fresh = array_replace($data, [
+            'ot_meal_bonus' => $otMealBonus, 'ot_meal_deduction' => $otMealDeduction,
+            'ot_meal_deduct_days' => $deductDays,
+        ]);
         $updates = PayrollEngine::calculateAdjustedFields($fresh, $slip);
         foreach ($manual as $field => $value) {
             payrollEqual(false, array_key_exists($field, $updates), "$field excluded from automatic updates");
@@ -505,7 +566,11 @@ $tests['repeated recalculation preserves manual flag and values but refreshes au
         }
         payrollEqual($fresh['basic_salary_received'], $slip['basic_salary_received'], 'basic salary refreshed');
         payrollEqual($otMealBonus, $slip['ot_meal_bonus'], 'OT meals refreshed');
+        payrollEqual($otMealDeduction, $slip['ot_meal_deduction'], 'OT meal deduction refreshed');
+        payrollEqual($deductDays, $slip['ot_meal_deduct_days'], 'OT meal deduction days refreshed');
         payrollEqual(50_225_000 + $otMealBonus, $slip['gross_salary'], 'new gross replaces stale total');
+        payrollEqual(45_700_000 + $otMealBonus - $otMealDeduction, $slip['net_salary'],
+            'fresh deduction applied once without changing manual earnings or PIT');
         payrollEqual(PayrollEngine::calculateSlipTotals($slip),
             array_intersect_key($updates, array_flip(['gross_salary', 'net_salary', 'bank_transfer'])),
             'saving after recalculation keeps totals');
@@ -539,6 +604,128 @@ $tests['shared totals round net before clamping and tolerate missing optional fi
     ]);
     payrollEqual(0, $totals['net_salary'], 'advance cannot make net negative');
     payrollEqual(0, $totals['bank_transfer'], 'bank cannot be negative');
+};
+
+foreach ([
+    'threshold without meal' => [3.0, 0, 1, 0],
+    'threshold with meal' => [3.0, 1, 0, 0],
+    'below threshold with meal' => [2.99, 1, 0, 1],
+    'below threshold without meal' => [2.99, 0, 0, 0],
+] as $name => [$hours, $registered, $bonusDays, $deductDays]) {
+    $tests["OT meal $name"] = static function () use ($hours, $registered, $bonusDays, $deductDays): void {
+        foreach ([0, 1] as $flag) {
+            $fixture = payrollFixture($flag);
+            $fixture['attendance']['actual_workdays'] = 26;
+            $fixture['overtime'] = [[
+                'ot_date' => '2026-06-01', 'hours' => $hours,
+                'status' => 'approved', 'ot_meal_registered' => $hours >= PayrollEngine::OT_MEAL_MIN_HOURS ? 1 : 0,
+            ]];
+            [$baseline] = payrollCalculate($fixture);
+            $fixture['overtime'] = [[
+                'ot_date' => '2026-06-01', 'hours' => $hours,
+                'status' => 'approved', 'ot_meal_registered' => $registered,
+            ]];
+            [$result] = payrollCalculate($fixture);
+            payrollEqual($bonusDays, $result['ot_meal_days'], 'bonus days');
+            payrollEqual($deductDays, $result['ot_meal_deduct_days'], 'deduction days');
+            payrollEqual($bonusDays * PayrollEngine::OT_MEAL_ALLOWANCE, $result['ot_meal_bonus'], 'meal bonus');
+            payrollEqual($deductDays * PayrollEngine::OT_MEAL_ALLOWANCE, $result['ot_meal_deduction'], 'positive meal deduction');
+            if ($bonusDays === 0) {
+                foreach (['gross_salary', 'taxable_income', 'pit_amount'] as $field) {
+                    payrollEqual($baseline[$field], $result[$field], "$field unchanged by meal deduction");
+                }
+                payrollEqual($baseline['net_salary'] - $result['ot_meal_deduction'], $result['net_salary'],
+                    'meal deduction only reduces post-tax net');
+            }
+            payrollEqual($result['net_salary'], $result['bank_transfer'], 'bank equals net');
+            foreach (PayrollEngine::calculateSlipTotals($result) as $field => $value) {
+                payrollEqual($result[$field], $value, "meal totals engine parity: $field");
+            }
+            if ($deductDays > 0) {
+                payrollEqual(true, str_contains($result['remark'], 'Trừ ăn ca OT: -30,000'), 'deduction remark');
+            }
+        }
+    };
+}
+
+$tests['OT meals aggregate approved requests per employee and date using any registered meal'] = static function (): void {
+    $fixture = payrollFixture();
+    $fixture['overtime'] = [
+        ['ot_date' => '2026-06-01', 'hours' => 1.5, 'status' => 'approved', 'ot_meal_registered' => 0],
+        ['ot_date' => '2026-06-01', 'hours' => 1.5, 'status' => 'approved', 'ot_meal_registered' => 0],
+        ['ot_date' => '2026-06-01', 'hours' => 5, 'status' => 'pending', 'ot_meal_registered' => 1],
+        ['ot_date' => '2026-06-02', 'hours' => 1, 'status' => 'approved', 'ot_meal_registered' => 0],
+        ['ot_date' => '2026-06-02', 'hours' => 1, 'status' => 'approved', 'ot_meal_registered' => 1],
+        ['ot_date' => '2026-06-02', 'hours' => 5, 'status' => 'rejected', 'ot_meal_registered' => 0],
+        ['ot_date' => '2026-06-02', 'hours' => 5, 'status' => 'approved', 'user_id' => 99, 'ot_meal_registered' => 0],
+        ['ot_date' => '2026-06-03', 'hours' => 1, 'status' => 'approved', 'ot_meal_registered' => 1],
+        ['ot_date' => '2026-06-03', 'hours' => 2, 'status' => 'approved', 'ot_meal_registered' => 0],
+        ['ot_date' => '2026-06-04', 'hours' => 3, 'status' => 'pending', 'ot_meal_registered' => 0],
+        ['ot_date' => '2026-06-05', 'hours' => 1, 'status' => 'rejected', 'ot_meal_registered' => 1],
+        ['ot_date' => '2026-05-30', 'hours' => 1, 'status' => 'approved', 'ot_meal_registered' => 1],
+        ['ot_date' => '2026-07-01', 'hours' => 3, 'status' => 'approved', 'ot_meal_registered' => 0],
+    ];
+    [$result] = payrollCalculate($fixture);
+    payrollEqual(1, $result['ot_meal_days'], 'split requests reach threshold once');
+    payrollEqual(1, $result['ot_meal_deduct_days'], 'one approved registered request means meal eaten');
+    payrollEqual(30_000, $result['ot_meal_bonus'], 'one bonus allowance');
+    payrollEqual(30_000, $result['ot_meal_deduction'], 'one deduction allowance');
+};
+
+$tests['OT meals exclude Sunday and holidays but include Saturday'] = static function (): void {
+    $fixture = payrollFixture();
+    $fixture['holidays'] = ['2026-06-08', '2026-06-09'];
+    $fixture['overtime'] = [
+        ['ot_date' => '2026-06-07', 'hours' => 3, 'status' => 'approved', 'ot_meal_registered' => 0],
+        ['ot_date' => '2026-06-14', 'hours' => 1, 'status' => 'approved', 'ot_meal_registered' => 1],
+        ['ot_date' => '2026-06-08', 'hours' => 3, 'status' => 'approved', 'ot_meal_registered' => 0],
+        ['ot_date' => '2026-06-09', 'hours' => 1, 'status' => 'approved', 'ot_meal_registered' => 1],
+        ['ot_date' => '2026-06-06', 'hours' => 3, 'status' => 'approved', 'ot_meal_registered' => 0],
+        ['ot_date' => '2026-06-13', 'hours' => 1, 'status' => 'approved', 'ot_meal_registered' => 1],
+    ];
+    [$result] = payrollCalculate($fixture);
+    payrollEqual(1, $result['ot_meal_days'], 'Saturday bonus only');
+    payrollEqual(1, $result['ot_meal_deduct_days'], 'Saturday deduction only');
+};
+
+$tests['OT meal legacy registration and absent slip deduction default to zero'] = static function (): void {
+    $fixture = payrollFixture();
+    $fixture['overtime'] = [
+        ['ot_date' => '2026-06-01', 'hours' => 3, 'status' => 'approved'],
+        ['ot_date' => '2026-06-02', 'hours' => 3, 'status' => 'approved', 'ot_meal_registered' => null],
+    ];
+    [$result] = payrollCalculate($fixture);
+    payrollEqual(2, $result['ot_meal_days'], 'legacy missing/null registration gets bonus');
+    payrollEqual(0, $result['ot_meal_deduct_days'], 'legacy no deduction days');
+    payrollEqual(0, $result['ot_meal_deduction'], 'legacy no deduction');
+    $legacy = $result;
+    unset($legacy['ot_meal_deduction'], $legacy['ot_meal_deduct_days']);
+    payrollEqual(PayrollEngine::calculateSlipTotals($result), PayrollEngine::calculateSlipTotals($legacy),
+        'legacy slip absent deduction is zero');
+};
+
+$tests['OT meal deduction clamps engine adjusted and saved net to zero'] = static function (): void {
+    $fixture = payrollFixture(0);
+    $fixture['overtime'] = [[
+        'ot_date' => '2026-06-01', 'hours' => 0, 'status' => 'approved', 'ot_meal_registered' => 1,
+    ]];
+    [$result] = payrollCalculate($fixture);
+    payrollEqual(30_000, $result['ot_meal_deduction'], 'deduction survives zero wages');
+    payrollEqual(0, $result['gross_salary'], 'deduction does not reduce gross');
+    payrollEqual(0, $result['net_salary'], 'engine net floor');
+    payrollEqual(0, $result['bank_transfer'], 'engine bank floor');
+    $slip = array_replace($result, ['other_income' => 10_000, 'advance_payment' => 5_000,
+        'remark' => 'manual', 'manually_adjusted' => 1]);
+    foreach (range(1, 2) as $iteration) {
+        $slip = array_replace($slip, PayrollEngine::calculateAdjustedFields($result, $slip));
+        payrollEqual(10_000, $slip['gross_salary'], 'manual gross retained');
+        payrollEqual(0, $slip['net_salary'], 'adjusted net floor');
+        payrollEqual(0, $slip['bank_transfer'], 'adjusted bank floor');
+        payrollEqual('manual', $slip['remark'], 'manual remark retained');
+        payrollEqual(PayrollEngine::calculateSlipTotals($slip), [
+            'gross_salary' => $slip['gross_salary'], 'net_salary' => 0, 'bank_transfer' => 0,
+        ], 'saved totals floor and no duplicate deduction');
+    }
 };
 
 $failed = 0;

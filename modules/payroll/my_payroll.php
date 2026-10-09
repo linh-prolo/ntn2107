@@ -475,6 +475,12 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <td class="text-muted small">(32) Trừ tiền đi muộn về sớm / Late-early deduction</td>
                             <td class="text-end text-danger"><?= number_format($slipDetail['late_deduction'], 0, '.', ',') ?></td>
                         </tr>
+                        <?php if ((float)($slipDetail['ot_meal_deduction'] ?? 0) > 0): ?>
+                        <tr>
+                            <td class="text-muted small">Trừ ăn ca OT</td>
+                            <td class="text-end text-danger"><?= number_format((float)($slipDetail['ot_meal_deduction'] ?? 0), 0, '.', ',') ?></td>
+                        </tr>
+                        <?php endif; ?>
                         <?php if ((float)$slipDetail['kpi_deduction'] > 0): ?>
                         <tr>
                             <td class="text-muted small">

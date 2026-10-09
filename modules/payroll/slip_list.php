@@ -232,7 +232,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <th colspan="6" class="grp-bonus">Phụ cấp & Thưởng</th><!-- ✅ colspan 4→6 -->
                     <th colspan="2" class="grp-kpi">KPI</th>
                     <th colspan="2" class="grp-leave">Nghỉ phép</th>
-                    <th colspan="3" class="grp-deduct">Khấu trừ tự động</th>
+                    <th colspan="4" class="grp-deduct">Khấu trừ tự động</th>
                     <th colspan="6" class="grp-manual">Điều chỉnh tay</th>
                     <th class="sticky-col-right col-net" rowspan="2">Thực nhận</th>
                     <th class="sticky-col-right col-act no-print" rowspan="2">Thao tác</th>
@@ -262,6 +262,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <th class="grp-deduct">BHXH</th>
                     <th class="grp-deduct">Thuế TNCN</th>
                     <th class="grp-deduct">Trừ muộn</th>
+                    <th class="grp-deduct">Trừ ăn ca OT</th>
                     <th class="grp-manual">Thu nhập khác</th>
                     <th class="grp-manual">Thưởng HS</th>
                     <th class="grp-manual">Thưởng khác</th>
@@ -360,6 +361,8 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <td class="text-end c-danger"><?= $s['si_employee']    > 0 ? number_format($s['si_employee'])    : '<span class="c-muted">—</span>' ?></td>
                 <td class="text-end c-danger"><?= $s['pit_amount']     > 0 ? number_format($s['pit_amount'])     : '<span class="c-muted">—</span>' ?></td>
                 <td class="text-end c-danger"><?= $s['late_deduction'] > 0 ? number_format($s['late_deduction']) : '<span class="c-muted">—</span>' ?></td>
+                <?php $otMealDeduction = (float)($s['ot_meal_deduction'] ?? 0); ?>
+                <td class="text-end c-danger"><?= $otMealDeduction > 0 ? number_format($otMealDeduction) : '<span class="c-muted">—</span>' ?></td>
 
                 <!-- Điều chỉnh tay -->
                 <?php foreach (['other_income','performance_bonus','other_bonus','adjustment','advance_payment','pit_adjustment'] as $f):
@@ -420,6 +423,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <td class="text-end"><?= number_format($totalSI) ?></td>
                     <td class="text-end"><?= number_format($totalPIT) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'late_deduction'))) ?></td>
+                    <td class="text-end c-danger"><?= number_format(array_sum(array_column($slips,'ot_meal_deduction'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'other_income'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'performance_bonus'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'other_bonus'))) ?></td>

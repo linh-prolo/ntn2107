@@ -21,6 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $startTime = $_POST['start_time'] ?? '';
     $hours = (float)($_POST['hours'] ?? 0);
     $reason = trim($_POST['reason'] ?? '');
+    $otMealRegistered = $_POST['ot_meal_registered'] ?? '';
 
     $validTypes = ['weekday', 'weekend', 'holiday', 'night_weekday', 'night_weekend', 'night_holiday'];
     $otDateObj = null;
@@ -39,6 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($hours <= 0) $errors[] = 'Số giờ OT phải lớn hơn 0.';
     if ($hours > 12) $errors[] = 'OT không được vượt quá 12 giờ/ngày.';
     if ($reason === '') $errors[] = 'Vui lòng nhập lý do OT.';
+    if (!in_array($otMealRegistered, ['0', '1'], true)) {
+        $errors[] = 'Vui lòng chọn đăng ký ăn tăng ca Có hoặc Không.';
+    }
 
     $endTime = '';
     if (empty($errors)) {
@@ -75,10 +79,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $shiftId = $shiftStmt->fetchColumn() ?: null;
 
         $stmt = $pdo->prepare("
-            INSERT INTO overtime_requests (user_id, ot_date, start_time, end_time, hours, reason, ot_type, shift_id, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+            INSERT INTO overtime_requests (user_id, ot_date, start_time, end_time, hours, reason, ot_type, shift_id, ot_meal_registered, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
         ");
-        $stmt->execute([$user['id'], $otDate, $startTime, $endTime, $hours, $reason, $otType, $shiftId]);
+        $stmt->execute([$user['id'], $otDate, $startTime, $endTime, $hours, $reason, $otType, $shiftId, (int)$otMealRegistered]);
         $requestId = (int)$pdo->lastInsertId();
 
         $managers = $pdo->query("SELECT id FROM users WHERE role_id IN (SELECT id FROM roles WHERE name IN ('production','manager','director')) AND is_active = 1")->fetchAll(PDO::FETCH_ASSOC);
@@ -159,6 +163,14 @@ showFlash();
                     <label class="form-label fw-semibold">Số giờ</label>
                     <input type="number" name="hours" class="form-control" min="0.5" step="0.5" max="12" required value="<?= e($_POST['hours'] ?? '') ?>">
                 </div>
+            </div>
+            <div>
+                <label class="form-label fw-semibold">🍱 Đăng ký ăn tăng ca?</label>
+                <select name="ot_meal_registered" class="form-select" required>
+                    <option value="">-- Chọn --</option>
+                    <option value="1" <?= ($_POST['ot_meal_registered'] ?? '') === '1' ? 'selected' : '' ?>>Có</option>
+                    <option value="0" <?= ($_POST['ot_meal_registered'] ?? '') === '0' ? 'selected' : '' ?>>Không</option>
+                </select>
             </div>
             <div>
                 <label class="form-label fw-semibold">Lý do</label>

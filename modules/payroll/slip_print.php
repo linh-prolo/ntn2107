@@ -684,6 +684,12 @@ table.data .kpi-deduct-row td { background: #f8d7da; }
             <td class="lbl sub">(31) Trừ đi muộn / về sớm / Late-early deduction</td>
             <td class="amt neg">- <?= number_format($s['late_deduction']) ?> đ</td>
         </tr>
+        <?php if ((float)($s['ot_meal_deduction'] ?? 0) > 0): ?>
+        <tr>
+            <td class="lbl sub">Trừ ăn ca OT</td>
+            <td class="amt neg">- <?= number_format((float)($s['ot_meal_deduction'] ?? 0)) ?> đ</td>
+        </tr>
+        <?php endif; ?>
         <?php if ($kpiDeduction > 0): ?>
         <tr class="kpi-deduct-row">
             <td class="lbl sub">

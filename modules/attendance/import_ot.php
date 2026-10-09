@@ -62,8 +62,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                 // Prepare insert
                 $insertStmt = $pdo->prepare("
                     INSERT INTO overtime_requests
-                        (user_id, ot_date, start_time, end_time, hours, reason, ot_type, shift_id, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+                        (user_id, ot_date, start_time, end_time, hours, reason, ot_type, shift_id, ot_meal_registered, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
                 ");
 
                 // Check duplicate
@@ -86,6 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                     $rawCode = strtoupper(trim($row['B'] ?? ''));
                     $rawHrs  = trim($row['C'] ?? '');
                     $rawNote = trim($row['D'] ?? '');
+                    $rawMeal = trim($row['E'] ?? '');
 
                     if ($rawDate === '' && $rawCode === '' && $rawHrs === '') continue;
 
@@ -95,9 +96,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                         'date'   => $rawDate,
                         'hours'  => $rawHrs,
                         'reason' => $rawNote,
+                        'meal'   => $rawMeal,
                         'status' => '',
                         'msg'    => '',
                     ];
+
+                    if ($rawMeal === '' || preg_match('/\A(?:không|0)\z/iu', $rawMeal)) {
+                        $otMealRegistered = 0;
+                    } elseif (preg_match('/\A(?:có|1)\z/iu', $rawMeal)) {
+                        $otMealRegistered = 1;
+                    } else {
+                        $rowResult['status'] = 'error';
+                        $rowResult['msg'] = '❌ Đăng ký ăn (cột E) chỉ chấp nhận Có/Không hoặc 1/0; để trống mặc định Không.';
+                        $results[] = $rowResult; $failed++; continue;
+                    }
 
                     // Parse date
                     $workDate = null;
@@ -174,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
                             $userId, $workDate,
                             $startOT . ':00',
                             $endOT   . ':00',
-                            $hours, $reason, $otType, $shiftId
+                            $hours, $reason, $otType, $shiftId, $otMealRegistered
                         ]);
                         $newId = $pdo->lastInsertId();
 
@@ -262,18 +274,20 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <th>B - mã nhân viên</th>
                                 <th>C - số giờ đăng ký OT</th>
                                 <th>D - lý do (nếu có)</th>
+                                <th>E - đăng ký ăn (có/không)</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td>2026-05-10</td><td>NV001</td><td>2</td><td>Hoàn thành đơn hàng gấp</td></tr>
-                            <tr><td>2026-05-10</td><td>NV002</td><td>3</td><td>Hỗ trợ sản xuất</td></tr>
-                            <tr><td>2026-05-11</td><td>NV001</td><td>1.5</td><td></td></tr>
+                            <tr><td>2026-05-10</td><td>NV001</td><td>2</td><td>Hoàn thành đơn hàng gấp</td><td>Có</td></tr>
+                            <tr><td>2026-05-10</td><td>NV002</td><td>3</td><td>Hỗ trợ sản xuất</td><td>Không</td></tr>
+                            <tr><td>2026-05-11</td><td>NV001</td><td>1.5</td><td></td><td></td></tr>
                         </tbody>
                     </table>
                     <ul class="small mb-0">
                         <li>Định dạng ngày: <code>YYYY-MM-DD</code> hoặc <code>DD/MM/YYYY</code></li>
                         <li>Số giờ OT: số thực dương, tối đa 12 (VD: 1, 1.5, 2, 3)</li>
                         <li>Lý do có thể để trống → tự động dùng "Tăng ca theo kế hoạch"</li>
+                        <li>Cột E đăng ký ăn: <strong>Có/Không</strong> (không phân biệt hoa thường) hoặc <code>1/0</code>. Thiếu cột hoặc để trống → Không; giá trị khác sẽ báo lỗi.</li>
                         <li>Nếu đã có đơn OT ngày đó → <strong class="text-warning">bỏ qua</strong>, không tạo trùng</li>
                         <li>Ngày quá khứ sẽ bị <strong class="text-danger">bỏ qua</strong></li>
                         <li>Tất cả đơn tạo ra ở trạng thái <span class="badge bg-warning text-dark">⌛ Chờ duyệt</span></li>
@@ -367,6 +381,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <th>Ngày</th>
                             <th>Số giờ OT</th>
                             <th>Lý do</th>
+                            <th>Đăng ký ăn</th>
                             <th>Kết quả</th>
                         </tr>
                     </thead>
@@ -378,6 +393,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <td><?= htmlspecialchars($r['date']) ?></td>
                         <td><?= htmlspecialchars($r['hours']) ?>h</td>
                         <td><small class="text-muted"><?= htmlspecialchars(mb_strimwidth($r['reason'], 0, 30, '...')) ?></small></td>
+                        <td><?= htmlspecialchars($r['meal'] === '' ? 'Không' : $r['meal']) ?></td>
                         <td><?= $r['msg'] ?></td>
                     </tr>
                     <?php endforeach; ?>

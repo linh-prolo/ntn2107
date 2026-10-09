@@ -22,6 +22,7 @@ $headers = [
     'B1' => 'mã nhân viên',
     'C1' => 'số giờ đăng ký OT',
     'D1' => 'lý do (nếu có)',
+    'E1' => 'đăng ký ăn (có/không)',
 ];
 
 foreach ($headers as $cell => $val) {
@@ -51,16 +52,17 @@ $sheet->getColumnDimension('A')->setWidth(18);
 $sheet->getColumnDimension('B')->setWidth(20);
 $sheet->getColumnDimension('C')->setWidth(22);
 $sheet->getColumnDimension('D')->setWidth(35);
+$sheet->getColumnDimension('E')->setWidth(26);
 $sheet->getRowDimension(1)->setRowHeight(22);
 
 // ── Dữ liệu mẫu ──
 $today    = date('Y-m-d');
 $tomorrow = date('Y-m-d', strtotime('+1 day'));
 $samples  = [
-    [$today,    'NV001', 2, 'Hoàn thiện báo cáo tháng'],
-    [$today,    'NV002', 3, 'Xử lý đơn hàng khẩn'],
-    [$tomorrow, 'NV003', 2, ''],
-    [$tomorrow, 'NV001', 4, 'Giao hàng cuối tuần'],
+    [$today,    'NV001', 2, 'Hoàn thiện báo cáo tháng', 'Có'],
+    [$today,    'NV002', 3, 'Xử lý đơn hàng khẩn', 'Không'],
+    [$tomorrow, 'NV003', 2, '', ''],
+    [$tomorrow, 'NV001', 4, 'Giao hàng cuối tuần', 'Có'],
 ];
 
 foreach ($samples as $i => $row) {
@@ -69,9 +71,10 @@ foreach ($samples as $i => $row) {
     $sheet->setCellValue("B$r", $row[1]);
     $sheet->setCellValue("C$r", $row[2]);
     $sheet->setCellValue("D$r", $row[3]);
+    $sheet->setCellValue("E$r", $row[4]);
 
     // Style dòng dữ liệu mẫu
-    $sheet->getStyle("A$r:D$r")->applyFromArray([
+    $sheet->getStyle("A$r:E$r")->applyFromArray([
         'borders' => [
             'allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'DDDDDD']],
         ],
@@ -92,13 +95,14 @@ $notes = [
     'Cột B (mã nhân viên): Mã nhân viên trong hệ thống, VD: NV001',
     'Cột C (số giờ): Số giờ OT, VD: 2 hoặc 2.5 (tối đa 12 giờ/ngày)',
     'Cột D (lý do): Không bắt buộc, có thể để trống',
+    'Cột E (đăng ký ăn): Có/Không (không phân biệt hoa thường) hoặc 1/0; thiếu hoặc trống = Không; giá trị khác báo lỗi',
     'Hệ thống sẽ tự xác định loại OT: Ngày thường / Cuối tuần / Ngày lễ',
     'Giờ bắt đầu OT mặc định = giờ kết thúc ca. Nếu chưa có ca → mặc định 17:00',
 ];
 foreach ($notes as $j => $note) {
     $nr = $noteRow + 1 + $j;
     $sheet->setCellValue("A$nr", '  • ' . $note);
-    $sheet->mergeCells("A$nr:D$nr");
+    $sheet->mergeCells("A$nr:E$nr");
     $sheet->getStyle("A$nr")->getFont()->setItalic(true)->setSize(10)->setColor(new Color('FF555555'));
 }
 
