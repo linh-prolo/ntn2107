@@ -238,6 +238,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 'si_employee'    => 'BHXH NV đóng',
                                 'pit_amount'     => 'Thuế TNCN',
                                 'late_deduction' => 'Trừ đi muộn/về sớm',
+                                'ot_meal_deduction' => 'Trừ ăn ca OT',
                                 'kpi_deduction'  => 'Trừ KPI không đạt',
                             ];
                             foreach ($deductFields as $field => $label): ?>
@@ -246,7 +247,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <input type="text"
                                        class="form-control form-control-sm bg-light
                                               <?= ($field === 'kpi_deduction' && $slip[$field] > 0) ? 'text-danger fw-bold' : '' ?>"
-                                       value="<?= number_format((float)$slip[$field]) ?>"
+                                       value="<?= number_format((float)($slip[$field] ?? 0)) ?>"
                                        readonly>
                             </div>
                             <?php endforeach; ?>
@@ -510,6 +511,14 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                     - <?= number_format((float)$slip['late_deduction']) ?> đ
                                 </td>
                             </tr>
+                            <?php if ((float)($slip['ot_meal_deduction'] ?? 0) > 0): ?>
+                            <tr>
+                                <td>Trừ ăn ca OT</td>
+                                <td class="text-end text-danger">
+                                    - <?= number_format((float)($slip['ot_meal_deduction'] ?? 0)) ?> đ
+                                </td>
+                            </tr>
+                            <?php endif; ?>
                             <?php if ($kpiDeduction > 0): ?>
                             <tr class="table-danger">
                                 <td>
@@ -582,6 +591,7 @@ const BASE = {
     si_employee      : <?= (float)$slip['si_employee'] ?>,
     pit              : <?= (float)$slip['pit_amount'] ?>,
     late_deduction   : <?= (float)$slip['late_deduction'] ?>,
+    ot_meal_deduction: <?= (float)($slip['ot_meal_deduction'] ?? 0) ?>,
     kpi_deduction    : <?= (float)($slip['kpi_deduction'] ?? 0) ?>,
 };
 
@@ -609,6 +619,7 @@ function recalc() {
               - BASE.pit
               - pitAdj
               - BASE.late_deduction
+              - BASE.ot_meal_deduction
               - BASE.kpi_deduction
               - advance;
 

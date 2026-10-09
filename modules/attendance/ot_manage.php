@@ -43,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         $ot_type        = trim($_POST['ot_type'] ?? 'weekday');
         $reason         = trim($_POST['reason'] ?? '');
         $auto_approve   = (int)($_POST['auto_approve'] ?? 1);
+        $otMealRegistered = $_POST['ot_meal_registered'] ?? '';
 
         $validTypes = ['weekday', 'weekend', 'holiday', 'night', 'night_weekday', 'night_weekend', 'night_holiday'];
         if (!in_array($ot_type, $validTypes, true)) $ot_type = 'weekday';
@@ -53,6 +54,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
         if (!$start_time)      $errors[] = 'Vui lòng nhập giờ bắt đầu.';
         if (!$end_time)        $errors[] = 'Vui lòng nhập giờ kết thúc.';
         if (!$reason)          $errors[] = 'Vui lòng nhập lý do OT.';
+        if (!in_array($otMealRegistered, ['0', '1'], true)) {
+            $errors[] = 'Vui lòng chọn đăng ký ăn tăng ca Có hoặc Không.';
+        }
 
         if (empty($errors)) {
             $startDt = DateTime::createFromFormat('H:i', $start_time);
@@ -102,9 +106,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
 
             $pdo->prepare("
                 INSERT INTO overtime_requests
-                (user_id, ot_date, start_time, end_time, hours, reason, ot_type, shift_id, status, approved_by, approved_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ")->execute([$target_user_id, $ot_date, $start_time, $end_time, $hours, $reason, $ot_type, $shift_id, $status, $approved_by, $approved_at]);
+                (user_id, ot_date, start_time, end_time, hours, reason, ot_type, shift_id, status, approved_by, approved_at, ot_meal_registered)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ")->execute([$target_user_id, $ot_date, $start_time, $end_time, $hours, $reason, $ot_type, $shift_id, $status, $approved_by, $approved_at, (int)$otMealRegistered]);
 
             $newId = $pdo->lastInsertId();
 
@@ -669,6 +673,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                             <th>Ngày OT</th>
                             <th>Giờ OT</th>
                             <th>Loại</th>
+                            <th>Ăn tăng ca</th>
                             <th>Hệ số</th>
                             <th>Lý do</th>
                             <th>Ngày gửi</th>
@@ -680,6 +685,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <?php foreach ($requests as $ot):
                         $otp  = $otTypeLabel[$ot['ot_type']] ?? ['?', 'secondary'];
                         $st   = $statusLabel[$ot['status']];
+                        $mealRegistered = (int)($ot['ot_meal_registered'] ?? 0) === 1;
                         $mult = match($ot['ot_type']) {
                             'weekend'       => $ot['weekend_multiplier'] ?? 2.0,
                             'holiday'       => $ot['holiday_multiplier'] ?? 3.0,
@@ -724,6 +730,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                                 <?= $otp[0] ?>
                             </span>
                         </td>
+                        <td><span class="badge bg-<?= $mealRegistered ? 'success' : 'secondary' ?>"><?= $mealRegistered ? 'Có ăn' : 'Không ăn' ?></span></td>
                         <td>
                             <?php if ($ot['shift_name']): ?>
                             <span class="badge" style="background:<?= $ot['shift_color'] ?>; font-size:11px;">
@@ -815,6 +822,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <?php foreach ($requests as $ot):
                     $otp = $otTypeLabel[$ot['ot_type']] ?? ['?', 'secondary'];
                     $st  = $statusLabel[$ot['status']];
+                    $mealRegistered = (int)($ot['ot_meal_registered'] ?? 0) === 1;
                     $requesterForCheck = ['id' => $ot['user_id'], 'role' => $ot['requester_role']];
                     $canAct = ($ot['status'] === 'pending') && canApprove($user, $requesterForCheck);
                 ?>
@@ -830,6 +838,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         <span><i class="fas fa-calendar me-1 text-primary"></i><?= formatDate($ot['ot_date']) ?></span>
                         <span><i class="fas fa-clock me-1 text-success"></i><?= $ot['hours'] ?>h (<?= substr($ot['start_time'],0,5) ?>–<?= substr($ot['end_time'],0,5) ?>)</span>
                         <span class="badge bg-<?= $otp[1] ?>"><?= $otp[0] ?></span>
+                        <span class="badge bg-<?= $mealRegistered ? 'success' : 'secondary' ?>"><?= $mealRegistered ? 'Có ăn' : 'Không ăn' ?></span>
                     </div>
                     <div class="small text-muted mb-2"><?= htmlspecialchars($ot['reason']) ?></div>
                     <?php if ($canAct): ?>
@@ -1140,6 +1149,7 @@ function confirmBulkReject() {
 function showDetail(ot) {
     const otTypeLabel = { weekday:'Ngày thường', weekend:'Cuối tuần', holiday:'Ngày lễ' };
     const statusLabel = { pending:'Chờ duyệt', approved:'Đã duyệt', rejected:'Từ chối' };
+    const mealRegistered = Number(ot.ot_meal_registered ?? 0) === 1;
     document.getElementById('detailBody').innerHTML = `
         <table class="table table-sm">
             <tr><th>Nhân viên</th><td>${ot.full_name} (${ot.employee_code})</td></tr>
@@ -1147,6 +1157,7 @@ function showDetail(ot) {
             <tr><th>Ngày OT</th><td>${ot.ot_date}</td></tr>
             <tr><th>Giờ OT</th><td>${ot.start_time} – ${ot.end_time} (${ot.hours} giờ)</td></tr>
             <tr><th>Loại</th><td>${otTypeLabel[ot.ot_type] || ot.ot_type}</td></tr>
+            <tr><th>Ăn tăng ca</th><td><span class="badge bg-${mealRegistered ? 'success' : 'secondary'}">${mealRegistered ? 'Có ăn' : 'Không ăn'}</span></td></tr>
             <tr><th>Lý do</th><td>${ot.reason}</td></tr>
             <tr><th>Trạng thái</th><td>${statusLabel[ot.status]}</td></tr>
             ${ot.approver_name ? `<tr><th>Người duyệt</th><td>${ot.approver_name}</td></tr>` : ''}
@@ -1263,6 +1274,14 @@ function calcCreateOtHours() {
                             </select>
                         </div>
 
+                        <div class="col-md-6">
+                            <label for="createOtMeal" class="form-label fw-semibold">🍱 Đăng ký ăn tăng ca? <span class="text-danger">*</span></label>
+                            <select name="ot_meal_registered" id="createOtMeal" class="form-select" required>
+                                <option value="" selected>-- Chọn --</option>
+                                <option value="1">Có</option>
+                                <option value="0">Không</option>
+                            </select>
+                        </div>
                         <!-- Lý do -->
                         <div class="col-12">
                             <label class="form-label fw-semibold">📝 Lý do OT <span class="text-danger">*</span></label>

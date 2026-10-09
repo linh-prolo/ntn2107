@@ -37,7 +37,7 @@ class PayrollEngine
         $net = $gross;
         foreach ([
             'si_employee', 'pit_amount', 'pit_adjustment',
-            'late_deduction', 'kpi_deduction', 'advance_payment',
+            'late_deduction', 'kpi_deduction', 'ot_meal_deduction', 'advance_payment',
         ] as $field) {
             $net -= (float)($slip[$field] ?? 0);
         }
@@ -372,13 +372,16 @@ class PayrollEngine
 
 
 
-        // ── Trợ cấp ăn ca OT: cộng thêm 30.000đ/ngày OT ≥ 3h ngày thường ───────
+        // ── Ăn ca OT: bù tiền khi đủ giờ chưa ăn, trừ tiền khi thiếu giờ đã ăn ──
 
-        $otMealDays    = $hasActivePeriod
-            ? $this->getOTMealDays($userId, $employmentFrom, $employmentTo)
-            : 0;
+        $otMealSummary = $hasActivePeriod
+            ? $this->getOTMealSummary($userId, $employmentFrom, $employmentTo)
+            : ['bonus_days' => 0, 'deduct_days' => 0];
+        $otMealDays = $otMealSummary['bonus_days'];
+        $otMealDeductDays = $otMealSummary['deduct_days'];
 
         $otMealBonus   = $otMealDays * self::OT_MEAL_ALLOWANCE;
+        $otMealDeduction = $otMealDeductDays * self::OT_MEAL_ALLOWANCE;
 
 
 
@@ -530,6 +533,8 @@ class PayrollEngine
 
             - $kpiDeduction
 
+            - $otMealDeduction
+
         );
 
 
@@ -544,7 +549,9 @@ class PayrollEngine
         if ($nightShiftBonus > 0)
             $remarkParts[] = "Phụ trội đêm: +".number_format($nightShiftBonus)." đ (30% × ".number_format($nightHoursActual,1)."h × lương CB/giờ)";
         if ($otMealBonus > 0)
-            $remarkParts[] = "Ăn ca OT: +".number_format($otMealBonus)." đ ($otMealDays ngày OT ≥3h, không tính CN/lễ)";
+            $remarkParts[] = "Ăn ca OT: +".number_format($otMealBonus)." đ ($otMealDays ngày OT ≥3h chưa ăn, không tính CN/lễ)";
+        if ($otMealDeduction > 0)
+            $remarkParts[] = "Trừ ăn ca OT: -".number_format($otMealDeduction)." đ ($otMealDeductDays ngày OT <3h đã ăn, không tính CN/lễ)";
         if ($responsibilityReceived > 0)
             $remarkParts[] = "PC Trách nhiệm: +".number_format($responsibilityReceived)." đ";
         if ($seniorityReceived > 0)
@@ -632,6 +639,10 @@ class PayrollEngine
             'ot_meal_days'               => $otMealDays,
 
             'ot_meal_bonus'              => $otMealBonus,
+
+            'ot_meal_deduct_days'        => $otMealDeductDays,
+
+            'ot_meal_deduction'          => $otMealDeduction,
 
             'clothes_allowance'          => $clothesAllow,
 
@@ -843,7 +854,7 @@ class PayrollEngine
 
 
 
-    private function getOTMealDays(int $userId, string $from, string $to): int
+    private function getOTMealSummary(int $userId, string $from, string $to): array
 
     {
 
@@ -869,11 +880,14 @@ class PayrollEngine
 
             $stmt = $this->pdo->prepare("
 
-                SELECT COUNT(*) AS meal_days
+                SELECT
+                    COALESCE(SUM(CASE WHEN total_hours >= ? AND meal_registered = 0 THEN 1 ELSE 0 END), 0) AS bonus_days,
+                    COALESCE(SUM(CASE WHEN total_hours < ? AND meal_registered = 1 THEN 1 ELSE 0 END), 0) AS deduct_days
 
                 FROM (
 
-                    SELECT ot_date, SUM(hours) AS total_hours
+                    SELECT ot_date, SUM(hours) AS total_hours,
+                        MAX(CASE WHEN ot_meal_registered = 1 THEN 1 ELSE 0 END) AS meal_registered
 
                     FROM overtime_requests
 
@@ -889,21 +903,23 @@ class PayrollEngine
 
                     GROUP BY ot_date
 
-                    HAVING total_hours >= ?
-
                 ) AS daily_ot
 
             ");
 
-            $stmt->execute([$userId, $from, $to, self::OT_MEAL_MIN_HOURS]);
+            $stmt->execute([self::OT_MEAL_MIN_HOURS, self::OT_MEAL_MIN_HOURS, $userId, $from, $to]);
 
-            return (int)$stmt->fetchColumn();
+            $summary = $stmt->fetch(PDO::FETCH_ASSOC);
+            return [
+                'bonus_days' => (int)($summary['bonus_days'] ?? 0),
+                'deduct_days' => (int)($summary['deduct_days'] ?? 0),
+            ];
 
         } catch (\Throwable $e) {
 
-            error_log("getOTMealDays error uid=$userId: " . $e->getMessage());
+            error_log("getOTMealSummary error uid=$userId: " . $e->getMessage());
 
-            return 0;
+            return ['bonus_days' => 0, 'deduct_days' => 0];
 
         }
 

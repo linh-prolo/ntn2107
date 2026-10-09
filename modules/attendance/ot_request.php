@@ -27,6 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     $start_time = $_POST['start_time'] ?? '';
     $end_time   = $_POST['end_time']   ?? '';
     $reason     = trim($_POST['reason'] ?? '');
+    $otMealRegistered = $_POST['ot_meal_registered'] ?? '';
     $errors     = [];
 
     // ── Validate ──
@@ -34,6 +35,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
     if (empty($start_time)) $errors[] = 'Vui lòng nhập giờ bắt đầu.';
     if (empty($end_time))   $errors[] = 'Vui lòng nhập giờ kết thúc.';
     if (empty($reason))     $errors[] = 'Vui lòng nhập lý do OT.';
+    if (!in_array($otMealRegistered, ['0', '1'], true)) {
+        $errors[] = 'Vui lòng chọn đăng ký ăn tăng ca Có hoặc Không.';
+    }
     if ($ot_date < date('Y-m-d')) $errors[] = 'Không thể đăng ký OT cho ngày đã qua.';
 
     if (empty($errors)) {
@@ -107,10 +111,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCSRF($_POST['csrf_token'] ?? 
 
         $stmt = $pdo->prepare("
             INSERT INTO overtime_requests
-            (user_id, ot_date, start_time, end_time, hours, reason, ot_type, shift_id, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+            (user_id, ot_date, start_time, end_time, hours, reason, ot_type, shift_id, ot_meal_registered, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
         ");
-        $stmt->execute([$user['id'], $ot_date, $start_time, $end_time, $hours, $reason, $ot_type, $shift_id]);
+        $stmt->execute([$user['id'], $ot_date, $start_time, $end_time, $hours, $reason, $ot_type, $shift_id, (int)$otMealRegistered]);
         $newId = $pdo->lastInsertId();
 
         // Gửi thông báo cho quản lý
@@ -305,6 +309,15 @@ $statusLabel = ['pending' => ['⌛ Chờ duyệt', 'warning'], 'approved' => ['�
                                 <strong>OT đêm tự động:</strong> OT từ <strong>22:00</strong> đến <strong>06:00</strong>
                                 → hệ thống tự tính hệ số OT đêm (×2.1 / ×2.7 / ×3.9)
                             <?php endif; ?>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">🍱 Đăng ký ăn tăng ca? <span class="text-danger">*</span></label>
+                            <select name="ot_meal_registered" class="form-select" required>
+                                <option value="">-- Chọn --</option>
+                                <option value="1" <?= ($_POST['ot_meal_registered'] ?? '') === '1' ? 'selected' : '' ?>>Có</option>
+                                <option value="0" <?= ($_POST['ot_meal_registered'] ?? '') === '0' ? 'selected' : '' ?>>Không</option>
+                            </select>
                         </div>
 
                         <!-- Lý do -->
