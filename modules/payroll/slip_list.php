@@ -233,7 +233,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <th colspan="2" class="grp-kpi">KPI</th>
                     <th colspan="2" class="grp-leave">Nghỉ phép</th>
                     <th colspan="3" class="grp-deduct">Khấu trừ tự động</th>
-                    <th colspan="4" class="grp-manual">Điều chỉnh tay</th>
+                    <th colspan="6" class="grp-manual">Điều chỉnh tay</th>
                     <th class="sticky-col-right col-net" rowspan="2">Thực nhận</th>
                     <th class="sticky-col-right col-act no-print" rowspan="2">Thao tác</th>
                 </tr>
@@ -265,7 +265,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <th class="grp-manual">Thu nhập khác</th>
                     <th class="grp-manual">Thưởng HS</th>
                     <th class="grp-manual">Thưởng khác</th>
+                    <th class="grp-manual">Điều chỉnh +/-</th>
                     <th class="grp-manual">Tạm ứng</th>
+                    <th class="grp-manual">Điều chỉnh PIT</th>
                 </tr>
             </thead>
             <tbody>
@@ -360,9 +362,11 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                 <td class="text-end c-danger"><?= $s['late_deduction'] > 0 ? number_format($s['late_deduction']) : '<span class="c-muted">—</span>' ?></td>
 
                 <!-- Điều chỉnh tay -->
-                <?php foreach (['other_income','performance_bonus','other_bonus','advance_payment'] as $f):
-                    $val = (float)$s[$f]; $isAdv = ($f === 'advance_payment'); ?>
-                <td class="text-end <?= $val != 0 ? ($isAdv ? 'c-danger' : '') : '' ?>">
+                <?php foreach (['other_income','performance_bonus','other_bonus','adjustment','advance_payment','pit_adjustment'] as $f):
+                    $val = (float)($s[$f] ?? 0);
+                    $isAdv = ($f === 'advance_payment');
+                    $isNeg = ($f === 'adjustment' || $f === 'pit_adjustment') && $val < 0; ?>
+                <td class="text-end <?= $val != 0 ? (($isAdv || $isNeg) ? 'c-danger' : '') : '' ?>">
                     <?= $val != 0 ? number_format($val) : '<span class="c-muted">—</span>' ?>
                 </td>
                 <?php endforeach; ?>
@@ -419,7 +423,9 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'other_income'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'performance_bonus'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'other_bonus'))) ?></td>
+                    <td class="text-end"><?= number_format(array_sum(array_column($slips,'adjustment'))) ?></td>
                     <td class="text-end"><?= number_format(array_sum(array_column($slips,'advance_payment'))) ?></td>
+                    <td class="text-end"><?= number_format(array_sum(array_column($slips,'pit_adjustment'))) ?></td>
                     <td class="sticky-col-right col-net text-end"><?= number_format($totalNet) ?></td>
                     <td class="sticky-col-right col-act no-print"></td>
                 </tr>
