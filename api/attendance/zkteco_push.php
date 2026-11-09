@@ -43,7 +43,7 @@ $receivedToken = $_GET['token']
 $receivedToken = preg_replace('/^Bearer\s+/i', '', $receivedToken);
 
 if (!hash_equals($expectedToken, $receivedToken)) {
-    zkLog('AUTH_FAIL | ip=' . ($_SERVER['REMOTE_ADDR'] ?? '') . ');
+    zkLog('AUTH_FAIL | ip=' . ($_SERVER['REMOTE_ADDR'] ?? ''));
     http_response_code(401);
     echo 'Unauthorized';
     exit;
