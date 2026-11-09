@@ -27,3 +27,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Dữ liệu nhạy cảm: ảnh chấm công và bản dump DB
+uploads/attendance/*/
+sql/ntnvncom_erp_*.sql
