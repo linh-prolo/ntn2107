@@ -233,6 +233,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h4 class="mb-0">📋 Duyệt đơn nghỉ phép</h4>
+        <a href="/erp/modules/attendance/leave_stats.php" class="btn btn-outline-primary btn-sm ms-auto me-2">📊 Thống kê nghỉ phép</a>
         <button class="btn btn-primary btn-sm" onclick="showManualCreate()">
             <i class="fas fa-plus me-1"></i> Tạo đơn thủ công
         </button>

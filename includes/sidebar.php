@@ -16,7 +16,7 @@ $sidebarUser = currentUser();
 $activeGroup = '';
 if (isGroupActive(['/modules/users/profile', '/modules/users/change_password'])) $activeGroup = 'personal';
 elseif (isGroupActive(['/attendance/', '/leave_request', '/ot_request', '/all_attendance',
-                        '/leave_manage', '/ot_manage', '/shift_schedule', '/shift_assign', '/shift_setup',
+                        '/leave_manage', '/leave_stats', '/ot_manage', '/shift_schedule', '/shift_assign', '/shift_setup',
                         '/location_settings', '/department_location_policy', '/manual_attendance',
                         '/payroll/holidays', '/zkteco_devices'])) $activeGroup = 'attendance';
 elseif (isGroupActive(['/payroll/'])) $activeGroup = 'payroll';
@@ -78,6 +78,8 @@ elseif (isGroupActive(['/modules/users/index'])) $activeGroup = 'system';
         <li><a class="nav-link <?= isActive('/leave_manage') ?>" href="/erp/modules/attendance/leave_manage.php">
           <i class="fas fa-clipboard-check"></i><span>Duyệt nghỉ phép</span>
           <span class="badge bg-warning text-dark ms-1" id="sidebarLeaveCount"></span></a></li>
+        <li><a class="nav-link <?= isActive('/leave_stats') ?>" href="/erp/modules/attendance/leave_stats.php">
+          <i class="fas fa-chart-bar"></i><span>Thống kê nghỉ phép</span></a></li>
         <li><a class="nav-link <?= isActive('/ot_manage') ?>" href="/erp/modules/attendance/ot_manage.php">
           <i class="fas fa-user-clock"></i><span>Duyệt OT</span>
           <span class="badge bg-info ms-1" id="sidebarOTCount"></span></a></li>
