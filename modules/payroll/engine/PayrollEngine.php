@@ -513,9 +513,13 @@ class PayrollEngine
         $resignationPitAmount = $hasResignation
             ? (int)round($grossForTax * self::RESIGNATION_PIT_RATE)
             : 0;
-        $pitAmount = $hasResignation
-            ? $resignationPitAmount
-            : $this->calcPIT($taxableIncome);
+        $flatPit = (int)($profile['flat_pit_10'] ?? 0) === 1;
+        $flatPitAmount = $flatPit
+            ? (int)round(($grossForTax + $leavePayout) * self::RESIGNATION_PIT_RATE)
+            : 0;
+        $pitAmount = $flatPit
+            ? $flatPitAmount
+            : ($hasResignation ? $resignationPitAmount : $this->calcPIT($taxableIncome));
 
 
 
@@ -581,7 +585,9 @@ class PayrollEngine
             $remarkParts[] = "Nghỉ lễ: {$holidayPaidDays} ngày (hưởng lương)";
         if ($hasResignation)
             $remarkParts[] = "Nghỉ việc: không hưởng ngày lễ nguyên lương";
-        if ($hasResignation)
+        if ($flatPit)
+            $remarkParts[] = "Trừ thuế TNCN 10%: -".number_format($flatPitAmount)." đ (10% × tổng thu nhập)";
+        elseif ($hasResignation)
             $remarkParts[] = "Nghỉ việc: thuế TNCN = 10% × lương gross (-".number_format($resignationPitAmount)." đ)";
 
         if (!$attendEligible && $attendBonus > 0)

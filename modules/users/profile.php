@@ -63,6 +63,13 @@ $stmt = $pdo->prepare("SELECT * FROM employee_profiles WHERE user_id = ?");
 $stmt->execute([$targetId]);
 $profile = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
+$hasFlatPitColumn = false;
+try {
+    $hasFlatPitColumn = (bool)$pdo->query("SHOW COLUMNS FROM employee_profiles WHERE Field = 'flat_pit_10'")->fetch();
+} catch (Throwable $e) {
+    error_log('profile.php check flat pit column error: ' . $e->getMessage());
+}
+
 $hasLumpSumColumn = false;
 try {
     $hasLumpSumColumn = (bool)$pdo->query("SHOW COLUMNS FROM employee_profiles WHERE Field = 'is_lump_sum'")->fetch();
@@ -115,6 +122,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'has_social_insurance'    => isset($_POST['has_social_insurance']) ? 1 : 0,
         'dependants'              => max(0, (int)($_POST['dependants'] ?? 0)),
     ];
+    if ($canEditSalary && $hasFlatPitColumn) {
+        $data['flat_pit_10'] = isset($_POST['flat_pit_10']) ? 1 : 0;
+    }
     if ($canEditSalary && $hasLumpSumColumn) {
         $data['is_lump_sum'] = isset($_POST['is_lump_sum']) ? 1 : 0;
     }
@@ -648,6 +658,25 @@ include $_SERVER['DOCUMENT_ROOT'] . '/erp/includes/sidebar.php';
                         </div>
                         <?php if (!$hasLumpSumColumn): ?>
                         <div class="form-text text-warning">Cần chạy migration bổ sung cột is_lump_sum để sử dụng.</div>
+                        <?php endif; ?>
+                    </div>
+                    <?php endif; ?>
+
+                    <?php if ($canEditSalary): ?>
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold">Thuế TNCN</label>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" name="flat_pit_10"
+                                   id="flatPit10" value="1"
+                                   <?= (!empty($errors) ? isset($_POST['flat_pit_10']) : !empty($profile['flat_pit_10'])) ? 'checked' : '' ?>
+                                   <?= $hasFlatPitColumn ? '' : 'disabled' ?>>
+                            <label class="form-check-label" for="flatPit10">
+                                Khấu trừ thuế TNCN 10% (lao động thời vụ, không đóng BHXH)
+                                <small class="text-muted d-block">Trừ 10% × tổng thu nhập khi tính lương</small>
+                            </label>
+                        </div>
+                        <?php if (!$hasFlatPitColumn): ?>
+                        <div class="form-text text-warning">Cần chạy sql/employee_flat_pit.sql để sử dụng.</div>
                         <?php endif; ?>
                     </div>
                     <?php endif; ?>
