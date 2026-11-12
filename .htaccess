@@ -9,6 +9,17 @@ RewriteRule ^iclock/cdata$         iclock/cdata.php [L,QSA]
 RewriteRule ^iclock/getrequest$    iclock/getrequest.php [L,QSA]
 RewriteRule ^iclock/devicecmd$     iclock/devicecmd.php [L,QSA]
 
+# API cho ứng dụng di động (Flutter) – /erp/api/mobile/*
+# Chuyển tiếp header Authorization cho PHP (CGI/FPM thường bỏ header này)
+RewriteCond %{HTTP:Authorization} .
+RewriteRule ^api/mobile/ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteRule ^api/mobile/_ - [F,L]
+RewriteRule ^api/mobile/attendance/(checkin|checkout)$          api/mobile/attendance.php?action=$1 [L,QSA]
+RewriteRule ^api/mobile/payslip/([0-9]+)$                       api/mobile/payslip.php?id=$1 [L,QSA]
+RewriteRule ^api/mobile/notifications/([0-9]+)/read$            api/mobile/notifications.php?id=$1&action=read [L,QSA]
+RewriteRule ^api/mobile/notifications/read-all$                 api/mobile/notifications.php?action=read_all [L,QSA]
+RewriteRule ^api/mobile/(login|logout|me|attendance|ot|leave|payslip|notifications)$ api/mobile/$1.php [L,QSA]
+
 # Cho phép truy cập trực tiếp vào file tĩnh trong uploads (ảnh chấm công)
 RewriteRule ^uploads/ - [L]
 
